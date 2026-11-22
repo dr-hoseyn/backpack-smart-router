@@ -1,0 +1,20 @@
+[Unit]
+Description=BackPack Smart Router kernel traffic metrics
+After=backpack-router-kernel-forward.service
+Wants=backpack-router-kernel-forward.service
+
+[Service]
+Type=simple
+RuntimeDirectory=backpack-router-kernel
+ExecStart=/opt/backpack-router/kernel-forward/kernel-forward.py /etc/backpack-router/kernel-forward.json publish
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+[Install]
+WantedBy=multi-user.target

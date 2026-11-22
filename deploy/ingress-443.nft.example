@@ -1,0 +1,6 @@
+table ip backpack_router_ingress {
+    chain redirect_to_go {
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "eth0" ip daddr 203.0.113.10 tcp dport 443 redirect to :14443
+    }
+}

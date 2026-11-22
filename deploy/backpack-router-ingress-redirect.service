@@ -1,0 +1,13 @@
+[Unit]
+Description=BackPack Smart Router fallback to the TCP proxy
+After=network-online.target nftables.service backpack-router-engine.service
+Wants=network-online.target backpack-router-engine.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/backpack-router/ingress-443.nft
+ExecStop=-/usr/sbin/nft delete table ip backpack_router_ingress
+
+[Install]
+WantedBy=multi-user.target

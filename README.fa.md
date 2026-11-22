@@ -40,6 +40,29 @@ ssh -L 9080:127.0.0.1:9080 ops@router.example.net
 
 فورواردینگ از سوکت روتر به VM استفاده می‌کند و VM آدرس شبکه‌ای روتر را به‌عنوان مبدأ می‌بیند. ترافیک برنامه و داده‌های احراز هویت داخل اتصال دست‌نخورده می‌مانند. UDP را وقتی پورت ورودی واقعی UDP است فعال کنید. بعضی پروفایل‌ها ترافیک UDP داخل اتصال TCP حمل می‌کنند.
 
+## ارسال TCP در کرنل لینوکس
+
+این حالت اختیاری برای روتر اختصاصی IPv4 با رابط‌های عمومی و خصوصی جداست. VMها باید TCP را روی پورت `443` بپذیرند. جدول `nftables` پیش‌فرض ارسال IPv4 را می‌بندد و فقط جریان‌های همین سرویس را عبور می‌دهد. NAT از IP خصوصی روتر به‌عنوان مبدأ استفاده می‌کند. سرویس Go برای پایش سلامت، پنل و مسیر پشتیبان لازم است.
+
+1. در نمونه‌های `deploy/kernel-forward.example` و `deploy/ingress-443.nft.example` آدرس‌ها و رابط‌ها را با مقادیر روتر جایگزین کنید. مقصدهای نمونهٔ موتور Go را هم روی همان VMها و پورت `443` تنظیم کنید. نمونهٔ مسیر پشتیبان، ورودی `443` را به شنوندهٔ Go روی `14443` منتقل می‌کند. اگر روتر مسیر پشتیبان دیگری دارد، از قواعد و سرویس همان میزبان استفاده کنید.
+2. از بستهٔ استخراج‌شده، فایل‌ها را روی میزبان نصب کنید و سهم اولیه را `0` بگذارید.
+
+```sh
+sudo install -D -m 0755 deploy/kernel-forward.py /opt/backpack-router/kernel-forward/kernel-forward.py
+sudo install -m 0644 deploy/kernel-forward.example /etc/backpack-router/kernel-forward.json
+sudo install -m 0644 deploy/ingress-443.nft.example /etc/backpack-router/ingress-443.nft
+sudo install -m 0644 deploy/backpack-router-{ingress-redirect,kernel-forward,kernel-metrics}.service /etc/systemd/system/
+printf '0\n' | sudo tee /etc/backpack-router/kernel-forward.share
+sudo nft -c -f /etc/backpack-router/ingress-443.nft
+sudo systemctl daemon-reload
+sudo systemctl enable --now backpack-router-kernel-forward backpack-router-kernel-metrics
+```
+
+3. ابتدا مسیر Go را با کلاینت واقعی آزمایش کنید. مقدار سهم را در بازهٔ `0` تا `1000` تنظیم کنید. مثلاً `50` یعنی `5%` از اتصال‌های جدید. بعد از بررسی CPU و تأخیر در بار مشابه، سهم را تدریجی افزایش دهید. `1000` تمام اتصال‌های جدید را به مسیر کرنل می‌فرستد. توقف `backpack-router-kernel-forward` اتصال‌های جدید را به Go برمی‌گرداند و نشست‌های برقرار را در جدول موجود نگه می‌دارد.
+4. برای جمع ترافیک دو مسیر در داشبورد، `-kernel-metrics /run/backpack-router-kernel/traffic.json` را به `PANEL_ARGS` اضافه و پنل را ری‌استارت کنید. آمار اتصال فعال همچنان مربوط به Go است. آمار ترافیک کرنل از زمان فعال شدن شمارنده‌ها محاسبه می‌شود.
+
+اگر کارت خصوصی تک‌صف است و وقفه‌ها یک هسته را اشباع کرده‌اند، نمونهٔ `deploy/kernel-forward-rps.conf.example` نحوهٔ ثبت RPS در systemd را نشان می‌دهد. ماسک `2f` برای میزبان شش‌هسته‌ای با وقفهٔ کارت خصوصی روی `CPU 4` است. پیش از استفاده، رابط، صف و ماسک را با وضعیت IRQ میزبان تطبیق دهید. فایل تنظیم‌شده را در `/etc/systemd/system/backpack-router-kernel-forward.service.d/10-private-rps.conf` قرار دهید و `systemctl daemon-reload` را اجرا کنید.
+
 ## آزمون سلامت سرتاسری
 
 روی هر VM یک SOCKS5 محلی روی loopback فراهم کنید که اتصال به یک مقصد HTTPS تحت کنترل در آلمان را از **همان تونل** عبور می‌دهد. مقصد باید با گواهی معتبر TLS پاسخ HTTP 204 بدهد. برای نمونه از کلاینت محلیِ پروفایل همان VM به‌عنوان SOCKS استفاده کنید. پاسخ مستقیم از اینترنت VM اعتبار این آزمون را از بین می‌برد.

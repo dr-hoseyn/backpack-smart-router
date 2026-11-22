@@ -109,11 +109,12 @@ function Overview({ status, cfg, light, openBackend }: {
   const backends = status?.backends ?? [];
   const stats = [
     { title: 'ورودی سالم', value: status?.online ? fmt(backends.filter(b => b.state === 'healthy').length) + ' / ' + fmt(backends.length) : '—', unit: 'مسیر' },
-    { title: 'اتصال و جریان فعال', value: fmt(status?.online ? status.active : undefined), unit: 'جریان' },
+    { title: status?.kernelTraffic ? 'جریان فعال در Go' : 'اتصال و جریان فعال', value: fmt(status?.online ? status.active : undefined), unit: 'جریان' },
     { title: 'دریافت / ارسال', value: status?.online ? mbps(status.rxRate) + ' / ' + mbps(status.txRate) : '—', unit: 'Mbps' },
     { title: 'ترافیک عبوری', value: traffic(status?.online ? status.rx + status.tx : undefined), unit: 'GB' },
   ];
   return <>
+    {status?.kernelTraffic === 'unavailable' && <p className="notice" role="status">آمار مسیر کرنل فعلاً در دسترس نیست. اعداد ترافیک فقط مسیر Go را نشان می‌دهند.</p>}
     <section className="stats">{stats.map(stat => <article className="card stat" key={stat.title}><h2>{stat.title}</h2>
       <div><strong dir="ltr">{stat.value}</strong> <small>{stat.unit}</small></div></article>)}</section>
     <RouteTopology status={status} config={cfg} light={light} openBackend={openBackend} />
@@ -180,7 +181,7 @@ function Backends({ cfg, status, csrf, save, focus }: {
         onChange={event => setEdit({ ...edit, row: { ...edit.row, enabled: event.target.checked } })} /> فعال</label>
       <div className="actions"><button className="primary" disabled={busy}>ذخیرهٔ ورودی</button><button type="button" onClick={() => setEdit(null)}>بستن</button></div>
     </form>}
-    <div className="table-wrap"><table><thead><tr>{['نام و مقصد','وضعیت','اتصال / UDP','دریافت / ارسال','تأخیر','عملیات'].map(label => <th key={label}>{label}</th>)}</tr></thead>
+    <div className="table-wrap"><table><thead><tr>{['نام و مقصد','وضعیت',status?.kernelTraffic ? 'TCP / UDP در Go' : 'اتصال / UDP','دریافت / ارسال','تأخیر','عملیات'].map(label => <th key={label}>{label}</th>)}</tr></thead>
       <tbody>{selected.backends.map(row => {
         const b = live.get(row.id);
         return <tr key={row.id}><td><strong>{row.name}</strong><small dir="ltr">{row.tcp || row.udp}</small></td>

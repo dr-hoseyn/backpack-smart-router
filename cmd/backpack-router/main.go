@@ -85,6 +85,7 @@ func run(ctx context.Context, args []string) error {
 		var opt panel.Options
 		command.StringVar(&opt.Address, "listen", "127.0.0.1:9080", "private dashboard address")
 		command.StringVar(&opt.Socket, "socket", "/run/backpack-router/control.sock", "engine control socket")
+		command.StringVar(&opt.KernelMetrics, "kernel-metrics", "", "optional kernel forwarding traffic snapshot")
 		command.StringVar(&opt.Snapshot, "config", "/var/lib/backpack-router/config/engine.json", "engine snapshot")
 		command.StringVar(&opt.Database, "database", "/var/lib/backpack-router/panel/router.sqlite", "SQLite database")
 		command.StringVar(&opt.Assets, "assets", "/opt/backpack-router/current/ui", "built dashboard")

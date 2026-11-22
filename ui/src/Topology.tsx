@@ -188,7 +188,7 @@ export function RouteTopology({ status, config, light, openBackend }: {
     <div className="section-title topology-title">
       <div>
         <h2 id="topology-title">نقشهٔ مسیرهای ترافیک</h2>
-        <p className="muted">ضخامت خط سهم ترافیک را نشان می‌دهد. برای جزئیات، یک مقصد را انتخاب کنید.</p>
+        <p className="muted">ضخامت خط سهم ترافیک را نشان می‌دهد. {live?.kernelTraffic ? 'شمار اتصال‌ها مربوط به Go است.' : 'برای جزئیات، یک مقصد را انتخاب کنید.'}</p>
       </div>
       <div className="view-switch" role="group" aria-label="نمایش مسیرها">
         <button type="button" aria-pressed={view === 'map'} onClick={() => setView('map')}>نقشه</button>
@@ -205,7 +205,7 @@ export function RouteTopology({ status, config, light, openBackend }: {
       </div>
       <div className="map-node map-router" data-map-router>
         <span className="router-name">موتور <bdi>Smart Router</bdi></span>
-        <strong>{live ? (strategies[live.strategy] ?? live.strategy) : 'وضعیت موتور در دسترس نیست'}</strong>
+        <strong>{live ? (live.kernelTraffic ? 'مسیریابی کرنل و Go' : (strategies[live.strategy] ?? live.strategy)) : 'وضعیت موتور در دسترس نیست'}</strong>
         <RouterListeners config={config} />
       </div>
       <div className="map-endpoints">

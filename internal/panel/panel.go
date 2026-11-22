@@ -25,24 +25,26 @@ import (
 
 type Options struct {
 	Address, Socket, Snapshot, Database, Assets, Admin, HashFile string
-	TLSCert, TLSKey                                              string
+	TLSCert, TLSKey, KernelMetrics                               string
 	SessionMinutes, RetentionDays                                int
 }
 
 type panel struct {
-	db        *sql.DB
-	client    *http.Client
-	auth      auth
-	snapshot  string
-	retention time.Duration
-	mu        sync.Mutex
-	status    atomic.Pointer[liveStatus]
-	streams   chan struct{}
+	db            *sql.DB
+	client        *http.Client
+	auth          auth
+	snapshot      string
+	kernelMetrics string
+	retention     time.Duration
+	mu            sync.Mutex
+	status        atomic.Pointer[liveStatus]
+	streams       chan struct{}
 }
 
 type liveStatus struct {
-	Online bool      `json:"online"`
-	At     time.Time `json:"at"`
+	Online        bool      `json:"online"`
+	At            time.Time `json:"at"`
+	KernelTraffic string    `json:"kernelTraffic,omitempty"`
 	router.Status
 }
 
@@ -79,7 +81,7 @@ func Serve(ctx context.Context, options Options) error {
 	if _, err := fs.Stat(ui, "index.html"); err != nil {
 		return fmt.Errorf("dashboard assets: %w", err)
 	}
-	p := &panel{db: db, client: router.ControlClient(options.Socket), snapshot: options.Snapshot,
+	p := &panel{db: db, client: router.ControlClient(options.Socket), snapshot: options.Snapshot, kernelMetrics: options.KernelMetrics,
 		retention: time.Duration(options.RetentionDays) * 24 * time.Hour, streams: make(chan struct{}, 48),
 		auth: auth{sessions: map[string]session{}, attempts: map[string]limit{}, slots: make(chan struct{}, 2),
 			duration: time.Duration(options.SessionMinutes) * time.Minute, secure: secure}}
@@ -151,17 +153,26 @@ func (p *panel) monitor(ctx context.Context) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	var lastCapture, lastCleanup time.Time
+	var kernel kernelSampler
 	for ctx.Err() == nil {
 		now := time.Now()
 		query, cancel := context.WithTimeout(ctx, 1500*time.Millisecond)
 		var status router.Status
 		err := p.control(query, http.MethodGet, "/status", &status)
 		if err == nil {
-			p.status.Store(&liveStatus{Online: true, At: now, Status: status})
+			var kernelTraffic string
+			if p.kernelMetrics != "" {
+				kernelTraffic = "unavailable"
+				if kernel.update(p.kernelMetrics, now) {
+					kernel.addTraffic(&status)
+					kernelTraffic = "included"
+				}
+			}
+			p.status.Store(&liveStatus{Online: true, At: now, Status: status, KernelTraffic: kernelTraffic})
 			if err := p.reconcile(query, status.Revision); err != nil {
 				slog.Warn("configuration pending", "error", err)
 			}
-			if now.Sub(lastCapture) >= 5*time.Second {
+			if kernelTraffic != "unavailable" && now.Sub(lastCapture) >= 5*time.Second {
 				if err := capture(p.db, status, now); err != nil {
 					slog.Error("capture metrics", "error", err)
 				} else {

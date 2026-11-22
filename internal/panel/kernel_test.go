@@ -1,0 +1,47 @@
+package panel
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/dr-hoseyn/backpack-smart-router/internal/router"
+)
+
+func TestKernelTrafficMergesFreshCounters(t *testing.T) {
+	const addr = "192.0.2.2:443"
+	path := filepath.Join(t.TempDir(), "traffic.json")
+	now := time.Now().Truncate(time.Second)
+	write := func(at time.Time, data string) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var sampler kernelSampler
+	write(now.Add(-2*time.Second), `{"backends":{"192.0.2.2:443":{"rx":1000,"tx":2000}}}`)
+	if sampler.update(path, now) {
+		t.Fatal("first sample has no rate")
+	}
+	write(now, `{"backends":{"192.0.2.2:443":{"rx":1600,"tx":2600}}}`)
+	if !sampler.update(path, now) || !sampler.update(path, now.Add(time.Second)) {
+		t.Fatal("fresh rate should survive repeated reads of the same sample")
+	}
+	status := router.Status{RX: 10, TX: 20, RXRate: 4, TXRate: 5, Active: 12,
+		Backends: []router.BackendStatus{{Backend: router.Backend{TCP: addr}, RX: 10, TX: 20, RXRate: 4, TXRate: 5, Active: 12}}}
+	sampler.addTraffic(&status)
+	backend := status.Backends[0]
+	if status.RX != 1610 || status.TX != 2620 || status.RXRate != 304 || status.TXRate != 305 || status.Active != 12 {
+		t.Fatalf("incorrect totals: %+v", status)
+	}
+	if backend.RX != status.RX || backend.TX != status.TX || backend.RXRate != status.RXRate || backend.TXRate != status.TXRate || backend.Active != 12 {
+		t.Fatalf("incorrect per-backend traffic: %+v", backend)
+	}
+	if sampler.update(path, now.Add(9*time.Second)) {
+		t.Fatal("stale sample should be unavailable")
+	}
+}

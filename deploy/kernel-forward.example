@@ -1,0 +1,10 @@
+{
+  "public_ip": "203.0.113.10",
+  "source_ip": "10.0.0.10",
+  "public_if": "eth0",
+  "backend_if": "eth1",
+  "public_ports": [443, 14443],
+  "backends": ["10.0.0.11", "10.0.0.12", "10.0.0.13"],
+  "test_ports": [24441, 24442, 24443],
+  "health_socket": "/run/backpack-router/control.sock"
+}

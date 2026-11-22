@@ -1,0 +1,17 @@
+[Unit]
+Description=BackPack Smart Router kernel TCP forwarding
+After=network-online.target nftables.service backpack-router-ingress-redirect.service
+Requires=backpack-router-ingress-redirect.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStartPre=/opt/backpack-router/kernel-forward/kernel-forward.py /etc/backpack-router/kernel-forward.json init
+ExecStartPre=/usr/sbin/sysctl -w net.ipv4.ip_forward=1
+ExecStart=/opt/backpack-router/kernel-forward/kernel-forward.py /etc/backpack-router/kernel-forward.json run
+ExecStopPost=-/opt/backpack-router/kernel-forward/kernel-forward.py /etc/backpack-router/kernel-forward.json disable
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=multi-user.target

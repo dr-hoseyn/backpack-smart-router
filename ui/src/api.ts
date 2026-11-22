@@ -16,6 +16,7 @@ export type Config = {
   groups: { id: string; tcp: string; udp: string; backends: Backend[] }[];
 };
 export type Status = {
+  kernelTraffic?: 'included' | 'unavailable';
   online: boolean; at: string; revision: number; strategy: string; active: number; rejected: number;
   rx: number; tx: number; rxRate: number; txRate: number; backends: BackendStatus[] | null;
   decision: { time: string; group: string; backend: string; protocol: string; strategy: string; score: number; retry: boolean } | null;

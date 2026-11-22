@@ -47,6 +47,13 @@ Backends see the router as the network-layer source.
 For deployments with a separate public ingress, set `VITE_PUBLIC_INGRESS` when
 building the UI to display its public address and port on the topology map.
 
+## Optional Linux kernel forwarding
+
+The standard installer starts the Go proxy. A dedicated IPv4 router with a
+separate backend interface can also run the opt-in nftables forwarding and
+metrics services. See the [kernel forwarding setup](README.fa.md#ارسال-tcp-در-کرنل-لینوکس)
+for configuration, staged rollout, and rollback.
+
 ## Management API
 
 Use the private dashboard address. Log in with `POST /api/v1/login` and retain
