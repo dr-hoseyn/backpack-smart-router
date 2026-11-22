@@ -83,9 +83,15 @@ func BenchmarkTCPCopyModes(b *testing.B) {
 		copy copier
 	}{
 		{"buffered", func(_ *net.TCPConn, src *net.TCPConn, meter meteredWriter) error { return copyTCPBuffered(src, meter) }},
-		{"splice", copyTCP},
+		{"splice", func(dst, src *net.TCPConn, meter meteredWriter) error {
+			if handled, err := spliceTCP(dst, src, meter); handled {
+				return err
+			}
+			return copyTCPBuffered(src, meter)
+		}},
+		{"adaptive", copyTCP},
 	}
-	for _, size := range []int{512, 32 * 1024} {
+	for _, size := range []int{512, 4096, 32 * 1024} {
 		for _, mode := range modes {
 			b.Run(fmt.Sprintf("%d/%s", size, mode.name), func(b *testing.B) {
 				client, input := spliceTestPair(b)

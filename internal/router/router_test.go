@@ -340,6 +340,31 @@ func TestSnapshotAndValidation(t *testing.T) {
 	}
 }
 
+type retryTestListener struct {
+	net.Listener
+	attempts int
+}
+
+func (listener *retryTestListener) Accept() (net.Conn, error) {
+	listener.attempts++
+	if listener.attempts == 1 {
+		return nil, &net.DNSError{Err: "temporary test error", IsTemporary: true}
+	}
+	return nil, net.ErrClosed
+}
+
+func TestAcceptRetriesTemporaryError(t *testing.T) {
+	var engine Engine
+	var sessions sync.WaitGroup
+	listener := new(retryTestListener)
+	if err := engine.acceptTCP(t.Context(), listener, "test", &sessions); err != nil {
+		t.Fatal(err)
+	}
+	if listener.attempts != 2 {
+		t.Fatalf("expected accept to retry, got %d attempts", listener.attempts)
+	}
+}
+
 func TestConcurrentForwarding(t *testing.T) {
 	count := 96
 	if input := os.Getenv("BACKPACK_TEST_CONNECTIONS"); input != "" {

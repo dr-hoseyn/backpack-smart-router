@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/netip"
 	"sync"
@@ -40,13 +41,6 @@ func (writer meteredWriter) record(count int) {
 	}
 }
 
-func copyTCP(dst, src *net.TCPConn, writer meteredWriter) error {
-	if handled, err := spliceTCP(dst, src, writer); handled {
-		return err
-	}
-	return copyTCPBuffered(src, writer)
-}
-
 func copyTCPBuffered(src *net.TCPConn, writer meteredWriter) error {
 	buffer := tcpBuffers.Get().(*[32 * 1024]byte)
 	defer tcpBuffers.Put(buffer)
@@ -55,14 +49,29 @@ func copyTCPBuffered(src *net.TCPConn, writer meteredWriter) error {
 }
 
 func (e *Engine) acceptTCP(ctx context.Context, listener net.Listener, group string, wg *sync.WaitGroup) error {
+	var retryDelay time.Duration
 	for {
 		conn, err := listener.Accept()
 		if errors.Is(err, net.ErrClosed) {
 			return nil
 		}
 		if err != nil {
-			return err
+			var networkError net.Error
+			if !errors.As(err, &networkError) || !networkError.Temporary() {
+				return err
+			}
+			retryDelay = min(time.Second, max(5*time.Millisecond, 2*retryDelay))
+			slog.Warn("retrying TCP accept", "group", group, "delay", retryDelay, "error", err)
+			timer := time.NewTimer(retryDelay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil
+			case <-timer.C:
+			}
+			continue
 		}
+		retryDelay = 0
 		if !e.admit() {
 			e.rejected.Add(1)
 			conn.Close()

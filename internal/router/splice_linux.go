@@ -12,6 +12,8 @@ import (
 const (
 	maxSplicePipes = 512
 	spliceBatch    = 64 * 1024
+	bulkReadSize   = 16 * 1024
+	bulkReadCount  = 2
 )
 
 type splicePipe [2]int
@@ -74,6 +76,76 @@ func spliceBytes(from, to, count int) (int, error) {
 
 func spliceUnsupported(err error) bool {
 	return err == unix.EINVAL || err == unix.ENOSYS || err == unix.EOPNOTSUPP || err == unix.EPERM
+}
+
+func copyTCP(dst, src *net.TCPConn, meter meteredWriter) error {
+	bulk, err := copyTCPUntilBulk(src, meter)
+	if !bulk {
+		return err
+	}
+	if handled, err := spliceTCP(dst, src, meter); handled {
+		return err
+	}
+	return copyTCPBuffered(src, meter)
+}
+
+// Short messages use a buffered copy. A waiting reader returns its buffer
+// to the pool, and sustained large reads switch to the kernel copy path.
+func copyTCPUntilBulk(src *net.TCPConn, meter meteredWriter) (bool, error) {
+	input, err := src.SyscallConn()
+	if err != nil {
+		return false, copyTCPBuffered(src, meter)
+	}
+
+	var buffer *[32 * 1024]byte
+	var count, consecutive int
+	var readErr error
+	defer func() {
+		if buffer != nil {
+			tcpBuffers.Put(buffer)
+		}
+	}()
+	read := func(fd uintptr) bool {
+		if buffer == nil {
+			buffer = tcpBuffers.Get().(*[32 * 1024]byte)
+		}
+		for {
+			count, readErr = unix.Read(int(fd), buffer[:])
+			if readErr != unix.EINTR {
+				break
+			}
+		}
+		if readErr == unix.EAGAIN {
+			tcpBuffers.Put(buffer)
+			buffer = nil
+			return false
+		}
+		return true
+	}
+
+	for {
+		if err := input.Read(read); err != nil {
+			return false, err
+		}
+		if readErr != nil || count == 0 {
+			return false, readErr
+		}
+		written, err := meter.Write(buffer[:count])
+		if err != nil {
+			return false, err
+		}
+		if written != count {
+			return false, io.ErrShortWrite
+		}
+		if count >= bulkReadSize {
+			consecutive++
+			if consecutive == bulkReadCount {
+				return true, nil
+			}
+		} else {
+			consecutive = 0
+		}
+	}
 }
 
 // spliceTCP returns handled=false only when the buffered path can resume at

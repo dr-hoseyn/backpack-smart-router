@@ -4,6 +4,6 @@ package router
 
 import "net"
 
-func spliceTCP(_, _ *net.TCPConn, _ meteredWriter) (bool, error) {
-	return false, nil
+func copyTCP(_ *net.TCPConn, src *net.TCPConn, writer meteredWriter) error {
+	return copyTCPBuffered(src, writer)
 }
