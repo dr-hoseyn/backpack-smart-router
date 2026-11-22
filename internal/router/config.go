@@ -68,7 +68,7 @@ func (c Config) Validate() error {
 	if !slices.Contains([]string{"weighted-least", "weighted-round-robin", "least-load", "least-rtt", "adaptive"}, c.Strategy) {
 		return errors.New("unknown strategy")
 	}
-	if c.MaxFlows < 1 || c.MaxFlows > 200000 || c.DialTimeoutMS < 50 || c.DialTimeoutMS > 30000 ||
+	if c.MaxFlows < 0 || c.MaxFlows > 200000 || c.DialTimeoutMS < 50 || c.DialTimeoutMS > 30000 ||
 		c.TCPIdleSeconds < 1 || c.TCPIdleSeconds > 86400 || c.UDPIdleSeconds < 1 || c.UDPIdleSeconds > 3600 ||
 		c.CheckIntervalMS < 500 || c.CheckIntervalMS > 300000 || c.CheckTimeoutMS < 100 ||
 		c.CheckTimeoutMS > 30000 || c.Failures < 1 || c.Failures > 20 || c.Recoveries < 1 || c.Recoveries > 20 ||
@@ -110,7 +110,7 @@ func (c Config) Validate() error {
 	for _, group := range c.Groups {
 		for _, b := range group.Backends {
 			if !identifier.MatchString(b.ID) || ids[b.ID] || len(b.Name) == 0 || len(b.Name) > 120 ||
-				b.Weight < 1 || b.Weight > 1000 || b.Capacity < 1 || b.Capacity > 200000 ||
+				b.Weight < 1 || b.Weight > 1000 || b.Capacity < 0 || b.Capacity > 200000 ||
 				b.RateMbps < 0 || b.RateMbps > 1000000 || (b.TCP == "" && b.UDP == "") ||
 				(b.TCP == "" && b.Probe == "") {
 				return fmt.Errorf("invalid backend %q", b.ID)

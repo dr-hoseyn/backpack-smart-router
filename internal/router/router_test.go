@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -315,6 +316,30 @@ func TestStrategiesAndConcurrentCapacity(t *testing.T) {
 				t.Fatalf("unexpected decision under %s: %s", strategy, res.b.spec.ID)
 			}
 		})
+	}
+}
+
+func TestZeroFlowLimitsDisableAdmissionCaps(t *testing.T) {
+	cfg := six()
+	cfg.MaxFlows = 0
+	cfg.Strategy = "adaptive"
+	cfg.Groups[0].Backends = cfg.Groups[0].Backends[:1]
+	cfg.Groups[0].Backends[0].Capacity = 0
+	e := healthyEngine(t, cfg)
+	e.active = 200_000
+	e.admitted = 200_000
+	e.byGroup["germany"][0].tcpActive = 200_000
+	if !e.admit() {
+		t.Fatal("zero global limit blocked admission")
+	}
+	res := e.choose("germany", false, nil)
+	if res.b == nil || math.IsInf(res.score, 0) || math.IsNaN(res.score) {
+		t.Fatalf("unexpected reservation for unlimited backend: %+v", res)
+	}
+	e.release(res.b, false)
+	e.unadmit()
+	if e.active != 200_000 || e.admitted != 200_000 {
+		t.Fatal("reservation accounting was not restored")
 	}
 }
 

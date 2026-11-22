@@ -1,7 +1,7 @@
 {
   "revision": 1,
   "strategy": "weighted-least",
-  "maxFlows": 12000,
+  "maxFlows": 0,
   "dialTimeoutMS": 1500,
   "tcpIdleSeconds": 600,
   "udpIdleSeconds": 90,
@@ -24,7 +24,7 @@
           "udp": "",
           "probe": "",
           "weight": 1,
-          "capacity": 2000,
+          "capacity": 0,
           "rateMbps": 0,
           "enabled": false,
           "drain": false
@@ -36,7 +36,7 @@
           "udp": "",
           "probe": "",
           "weight": 1,
-          "capacity": 2000,
+          "capacity": 0,
           "rateMbps": 0,
           "enabled": false,
           "drain": false
@@ -48,7 +48,7 @@
           "udp": "",
           "probe": "",
           "weight": 1,
-          "capacity": 2000,
+          "capacity": 0,
           "rateMbps": 0,
           "enabled": false,
           "drain": false
@@ -60,7 +60,7 @@
           "udp": "",
           "probe": "",
           "weight": 1,
-          "capacity": 2000,
+          "capacity": 0,
           "rateMbps": 0,
           "enabled": false,
           "drain": false
@@ -72,7 +72,7 @@
           "udp": "",
           "probe": "",
           "weight": 1,
-          "capacity": 2000,
+          "capacity": 0,
           "rateMbps": 0,
           "enabled": false,
           "drain": false
@@ -84,7 +84,7 @@
           "udp": "",
           "probe": "",
           "weight": 1,
-          "capacity": 2000,
+          "capacity": 0,
           "rateMbps": 0,
           "enabled": false,
           "drain": false

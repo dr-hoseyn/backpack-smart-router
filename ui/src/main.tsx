@@ -10,7 +10,7 @@ const mbps = (value?: number) => value === undefined ? '—' : fmt(value * 8 / 1
 const traffic = (value?: number) => value === undefined ? '—' : fmt(value / 1e9);
 const kinds: Record<string, string> = { healthy: 'بازیابی مسیر', unhealthy: 'خرابی مسیر', started: 'راه‌اندازی موتور', configuration: 'تغییر پیکربندی', 'dial-failover': 'تغییر مسیر اتصال', 'manual-check': 'آزمون دستی', login: 'ورود مدیر', 'admin-created': 'ایجاد حساب', 'admin-removed': 'حذف حساب', 'password-changed': 'تغییر رمز' };
 const ranges: Record<string, string> = { '5m': '5 دقیقه', '15m': '15 دقیقه', '1h': '1 ساعت', '24h': '24 ساعت', '7d': '7 روز' };
-const blankBackend: Backend = { id: '', name: '', tcp: '', udp: '', probe: '', weight: 1, capacity: 1000, rateMbps: 0, enabled: true, drain: false };
+const blankBackend: Backend = { id: '', name: '', tcp: '', udp: '', probe: '', weight: 1, capacity: 0, rateMbps: 0, enabled: true, drain: false };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'خطای پردازش درخواست';
 
 function Theme({ light, setLight }: { light: boolean; setLight: (value: boolean) => void }) {
@@ -165,7 +165,7 @@ function Backends({ cfg, status, csrf, save, focus }: {
     const rows = edit.previous ? selected.backends.map(row => row.id === edit.previous ? edit.row : row) : [...selected.backends, edit.row];
     if (await apply(update(rows))) setEdit(null);
   }
-  const fields = [['id','شناسه'],['name','نام مسیر'],['tcp','ورودی خصوصی TCP'],['udp','ورودی خصوصی UDP'],['probe','آدرس عامل سلامت'],['weight','وزن'],['capacity','سقف جریان'],['rateMbps','ظرفیت لینک (Mbps)']] as const;
+  const fields = [['id','شناسه'],['name','نام مسیر'],['tcp','ورودی خصوصی TCP'],['udp','ورودی خصوصی UDP'],['probe','آدرس عامل سلامت'],['weight','وزن'],['capacity','سقف جریان (0 یعنی بدون سقف)'],['rateMbps','ظرفیت لینک (Mbps)']] as const;
   return <section className="card"><div className="section-title"><div><h2>ورودی‌های خصوصی</h2>
     <p className="muted">اتصال‌های باز هنگام تخلیه در مسیر فعلی ادامه پیدا می‌کنند.</p></div>
     <div className="actions"><select aria-label="گروه ورودی" value={selected.id} onChange={event => { setGroup(event.target.value); setEdit(null); }}>
@@ -216,7 +216,7 @@ function Routing({ cfg, save }: { cfg: Config; save: Save }) {
   const [draft, setDraft] = useState(cfg);
   const [busy, setBusy] = useState(false);
   useEffect(() => setDraft(cfg), [cfg]);
-  const options = [['maxFlows','سقف جریان هم‌زمان'],['dialTimeoutMS','مهلت اتصال (ms)'],['tcpIdleSeconds','انقضای TCP (ثانیه)'],
+  const options = [['maxFlows','سقف جریان هم‌زمان (0 یعنی بدون سقف)'],['dialTimeoutMS','مهلت اتصال (ms)'],['tcpIdleSeconds','انقضای TCP (ثانیه)'],
     ['udpIdleSeconds','انقضای UDP (ثانیه)'],['checkIntervalMS','فاصلهٔ آزمون (ms)'],['checkTimeoutMS','مهلت آزمون (ms)'],
     ['failures','آستانهٔ خرابی'],['recoveries','آستانهٔ بازیابی'],['cooldownSeconds','انتظار بازیابی (ثانیه)']] as const;
   const weights = [['flows','جریان',4],['rate','ترافیک',3],['rtt','تأخیر',2],['cpu','پردازنده',2],['ram','حافظه',1],['retransmits','ارسال مجدد',1],['loss','افت بسته',2]] as const;

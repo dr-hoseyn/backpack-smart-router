@@ -1,0 +1,12 @@
+[Unit]
+Description=BackPack Smart Router panel TLS relay
+After=backpack-router-panel.service
+Requires=backpack-router-panel.service
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:9080
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_UNIX

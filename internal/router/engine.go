@@ -223,12 +223,13 @@ type reservation struct {
 func (e *Engine) choose(group string, udp bool, excluded *backend) reservation {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.active >= e.cfg.MaxFlows {
+	if e.cfg.MaxFlows > 0 && e.active >= e.cfg.MaxFlows {
 		return reservation{}
 	}
 	var chosen *backend
 	var best float64
 	var total int
+	roundRobin := e.cfg.Strategy == "weighted-round-robin"
 	index := 0
 	if udp {
 		index = 1
@@ -236,14 +237,16 @@ func (e *Engine) choose(group string, udp bool, excluded *backend) reservation {
 	for _, b := range e.byGroup[group] {
 		if b == excluded || !b.spec.Enabled || b.spec.Drain || b.health != "healthy" ||
 			(udp && b.spec.UDP == "") || (!udp && b.spec.TCP == "") ||
-			b.tcpActive+b.udpActive >= b.spec.Capacity {
+			(b.spec.Capacity > 0 && b.tcpActive+b.udpActive >= b.spec.Capacity) {
 			continue
 		}
-		score := e.score(b)
-		if e.cfg.Strategy == "weighted-round-robin" {
+		var score float64
+		if roundRobin {
 			b.rr[index] += b.spec.Weight
 			total += b.spec.Weight
 			score = -float64(b.rr[index])
+		} else {
+			score = e.score(b)
 		}
 		if chosen == nil || score < best || (score == best && b.count < chosen.count) {
 			chosen, best = b, score
@@ -268,7 +271,12 @@ func (e *Engine) choose(group string, udp bool, excluded *backend) reservation {
 }
 
 func (e *Engine) score(b *backend) float64 {
-	load := float64(b.tcpActive+b.udpActive+1) / float64(b.spec.Capacity)
+	capacity := b.spec.Capacity
+	if capacity == 0 {
+		// Keep load comparable to the highest configured capacity without enforcing a limit.
+		capacity = 200_000
+	}
+	load := float64(b.tcpActive+b.udpActive+1) / float64(capacity)
 	switch e.cfg.Strategy {
 	case "least-load":
 		return load
@@ -313,7 +321,7 @@ func (e *Engine) score(b *backend) float64 {
 func (e *Engine) admit() bool {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.admitted >= e.cfg.MaxFlows {
+	if e.cfg.MaxFlows > 0 && e.admitted >= e.cfg.MaxFlows {
 		return false
 	}
 	e.admitted++
