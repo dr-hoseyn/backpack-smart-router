@@ -51,6 +51,7 @@
 
 .route-map {
   --map-axis: horizontal;
+  direction: ltr;
   position: relative;
   isolation: isolate;
   display: grid;
@@ -66,6 +67,7 @@
 }
 .map-wires { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
 .map-node {
+  direction: rtl;
   min-width: 0;
   display: grid;
   gap: .36rem;
@@ -101,7 +103,7 @@
   --branch-color: var(--wire-quiet);
   position: relative;
   width: 100%;
-  border-inline-start: 3px solid var(--branch-color);
+  border-inline-end: 3px solid var(--branch-color);
 }
 .map-endpoint[data-signal=flow] { --branch-color: var(--wire-flow); }
 .map-endpoint[data-signal=idle] { --branch-color: var(--wire-idle); }

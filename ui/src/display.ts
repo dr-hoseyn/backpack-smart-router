@@ -1,7 +1,9 @@
-export const fa = new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 1 });
-export const fmt = (value?: number | null) => value == null ? '—' : fa.format(value);
+export const numberFormat = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+export const clockFormat = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+export const fmt = (value?: number | null) => value == null ? '—' : numberFormat.format(value);
+export const percent = (value?: number | null) => value == null ? '—' : `${fmt(value)}%`;
 export const timestamp = (value: string | number) =>
-  new Date(value).toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'medium' });
+  new Date(value).toLocaleString('fa-IR-u-nu-latn', { dateStyle: 'short', timeStyle: 'medium' });
 
 export const states: Record<string, string> = {
   healthy: 'سالم', unhealthy: 'قطع', draining: 'در حال تخلیه',

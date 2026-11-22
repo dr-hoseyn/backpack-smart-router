@@ -3,13 +3,13 @@ import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/vazirmatn';
 import './style.css';
 import { APIError, request, type Audit, type Backend, type BackendStatus, type Config, type Point, type Session, type Status } from './api';
-import { fa, fmt, strategies, timestamp } from './display';
+import { clockFormat, fmt, numberFormat, percent, strategies, timestamp } from './display';
 import { RouteTopology, StatusBadge } from './Topology';
 
-const mbps = (value?: number) => value === undefined ? '—' : fa.format(value * 8 / 1e6);
-const traffic = (value?: number) => value === undefined ? '—' : fa.format(value / 1e9);
+const mbps = (value?: number) => value === undefined ? '—' : fmt(value * 8 / 1e6);
+const traffic = (value?: number) => value === undefined ? '—' : fmt(value / 1e9);
 const kinds: Record<string, string> = { healthy: 'بازیابی مسیر', unhealthy: 'خرابی مسیر', started: 'راه‌اندازی موتور', configuration: 'تغییر پیکربندی', 'dial-failover': 'تغییر مسیر اتصال', 'manual-check': 'آزمون دستی', login: 'ورود مدیر', 'admin-created': 'ایجاد حساب', 'admin-removed': 'حذف حساب', 'password-changed': 'تغییر رمز' };
-const ranges: Record<string, string> = { '5m': '۵ دقیقه', '15m': '۱۵ دقیقه', '1h': '۱ ساعت', '24h': '۲۴ ساعت', '7d': '۷ روز' };
+const ranges: Record<string, string> = { '5m': '5 دقیقه', '15m': '15 دقیقه', '1h': '1 ساعت', '24h': '24 ساعت', '7d': '7 روز' };
 const blankBackend: Backend = { id: '', name: '', tcp: '', udp: '', probe: '', weight: 1, capacity: 1000, rateMbps: 0, enabled: true, drain: false };
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'خطای پردازش درخواست';
 
@@ -54,17 +54,18 @@ function Chart({ points, label, light }: { points: Point[]; label: string; light
       const maxValue = Math.max(1, ...points.map(point => Math.max(point.rx, point.tx) * 8 / 1e6));
       const start = points[0].time, elapsed = Math.max(1, points.at(-1)!.time - start);
       context.font = '11px Vazirmatn Variable, sans-serif';
+      context.direction = 'ltr';
       context.textAlign = 'left';
       context.fillStyle = css.getPropertyValue('--muted');
       context.strokeStyle = css.getPropertyValue('--line');
       for (let tick = 0; tick <= 4; tick++) {
         const y = top + (bottom - top) * tick / 4;
         context.beginPath(); context.moveTo(left, y); context.lineTo(right, y); context.stroke();
-        context.fillText(fa.format(maxValue * (1 - tick / 4)), 2, y + 3);
+        context.fillText(numberFormat.format(maxValue * (1 - tick / 4)), 2, y + 3);
       }
-      context.fillText(new Date(start * 1000).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }), left, height - 6);
+      context.fillText(clockFormat.format(start * 1000), left, height - 6);
       context.textAlign = 'right';
-      context.fillText(new Date((start + elapsed) * 1000).toLocaleTimeString('fa-IR', { hour: '2-digit', minute: '2-digit' }), right, height - 6);
+      context.fillText(clockFormat.format((start + elapsed) * 1000), right, height - 6);
       const gaps = points.slice(1).map((point, index) => point.time - points[index].time).sort((a, b) => a - b);
       const maxGap = Math.max(12, gaps[Math.floor(gaps.length / 2)] * 3);
       for (const [key, color] of [['rx', '--accent'], ['tx', '--secondary']] as const) {
@@ -124,7 +125,7 @@ function Overview({ status, cfg, light, openBackend }: {
       {error ? <p role="alert">{error}</p> : <Chart points={points} label="نمودار نرخ دریافت و ارسال" light={light} />}
     </section>
     {status?.decision && <section className="card decision"><h2>آخرین انتخاب مسیر</h2>
-      <p>{backends.find(b => b.id === status.decision?.backend)?.name ?? status.decision.backend} · {strategies[status.decision.strategy]} · امتیاز {fmt(status.decision.score)}
+      <p>{backends.find(b => b.id === status.decision?.backend)?.name ?? status.decision.backend} · {strategies[status.decision.strategy]} · امتیاز <bdi dir="ltr">{fmt(status.decision.score)}</bdi>
         {status.decision.retry && ' · انتخاب دوباره پس از خطای اتصال'}</p></section>}
   </>;
 }
@@ -184,8 +185,8 @@ function Backends({ cfg, status, csrf, save, focus }: {
         const b = live.get(row.id);
         return <tr key={row.id}><td><strong>{row.name}</strong><small dir="ltr">{row.tcp || row.udp}</small></td>
           <td><StatusBadge state={b?.state} /><small>{row.probe ? 'آزمون سرتاسری' : 'آزمون پورت'}</small></td>
-          <td><bdi>{fmt(b?.tcpActive)} / {fmt(b?.udpActive)}</bdi></td><td><bdi>{mbps(b?.rxRate)} / {mbps(b?.txRate)} Mbps</bdi></td>
-          <td><bdi>{fmt(b?.rtt || null)} ms</bdi></td>
+          <td><bdi dir="ltr">{fmt(b?.tcpActive)} / {fmt(b?.udpActive)}</bdi></td><td><bdi dir="ltr">{mbps(b?.rxRate)} / {mbps(b?.txRate)} Mbps</bdi></td>
+          <td><bdi dir="ltr">{fmt(b?.rtt || null)} ms</bdi></td>
           <td><div className="actions"><button onClick={() => setEdit({ previous: row.id, row: { ...row } })}>ویرایش</button>
             <button disabled={busy || !row.enabled} onClick={() => void check(row.id)}>آزمون</button>
             <button disabled={busy || !row.enabled} onClick={() => void apply(update(selected.backends.map(b => b.id === row.id ? { ...b, drain: !b.drain } : b)))}>{row.drain ? 'بازگردانی' : 'تخلیه'}</button>
@@ -200,12 +201,12 @@ function Backends({ cfg, status, csrf, save, focus }: {
 function Telemetry({ b }: { b: BackendStatus }) {
   return <details><summary>{b.name} · اطلاعات VM</summary>
     <dl>
-      <dt>امتیاز سلامت</dt><dd>{fmt(b.healthScore)}</dd>
-      <dt>پردازنده / حافظه</dt><dd>{fmt(b.cpu)}٪ / {fmt(b.ram)}٪</dd>
-      <dt>ارسال مجدد TCP</dt><dd>{fmt(b.retransmits)}٪</dd>
-      <dt>افت بسته</dt><dd>{fmt(b.loss)}٪</dd>
-      <dt>دریافت / ارسال رابط VM</dt><dd>{traffic(b.interfaceRx ?? undefined)} / {traffic(b.interfaceTx ?? undefined)} GB</dd>
-      <dt>آخرین آزمون موفق</dt><dd>{b.lastOK.startsWith('0001') ? '—' : timestamp(b.lastOK)}</dd>
+      <dt>امتیاز سلامت</dt><dd><bdi dir="ltr">{fmt(b.healthScore)}</bdi></dd>
+      <dt>پردازنده / حافظه</dt><dd><bdi dir="ltr">{percent(b.cpu)} / {percent(b.ram)}</bdi></dd>
+      <dt>ارسال مجدد TCP</dt><dd><bdi dir="ltr">{percent(b.retransmits)}</bdi></dd>
+      <dt>افت بسته</dt><dd><bdi dir="ltr">{percent(b.loss)}</bdi></dd>
+      <dt>دریافت / ارسال رابط VM</dt><dd><bdi dir="ltr">{traffic(b.interfaceRx ?? undefined)} / {traffic(b.interfaceTx ?? undefined)} GB</bdi></dd>
+      <dt>آخرین آزمون موفق</dt><dd><bdi dir="ltr">{b.lastOK.startsWith('0001') ? '—' : timestamp(b.lastOK)}</bdi></dd>
       <dt>آخرین خطا</dt><dd dir="auto">{b.failure || '—'}</dd>
     </dl></details>;
 }
@@ -253,10 +254,10 @@ function Events({ cfg }: { cfg: Config | null }) {
     <select aria-label="فیلتر ورودی" value={backend} onChange={event => setBackend(event.target.value)}>
       <option value="">همهٔ ورودی‌ها</option>{cfg?.groups.flatMap(group => group.backends.map(b => <option key={b.id} value={b.id}>{b.name}</option>))}</select>
     <select aria-label="بازهٔ رویداد" value={hours} onChange={event => setHours(event.target.value)}>
-      <option value="1">۱ ساعت</option><option value="24">۲۴ ساعت</option><option value="168">۷ روز</option></select></div>
+      <option value="1">1 ساعت</option><option value="24">24 ساعت</option><option value="168">7 روز</option></select></div>
     {error && <p role="alert">{error}</p>}
     {rows.length ? <div className="table-wrap"><table><thead><tr>{['زمان','رویداد','ورودی','جزئیات'].map(label => <th key={label}>{label}</th>)}</tr></thead>
-      <tbody>{rows.map(row => <tr key={row.id}><td>{timestamp(row.time * 1000)}</td><td>{kinds[row.kind] ?? row.kind}</td>
+      <tbody>{rows.map(row => <tr key={row.id}><td><bdi dir="ltr">{timestamp(row.time * 1000)}</bdi></td><td>{kinds[row.kind] ?? row.kind}</td>
         <td>{row.backend || '—'}</td><td dir="auto">{row.detail}<small dir="ltr">{row.actor.startsWith('engine:') ? 'engine' : row.actor}</small></td></tr>)}</tbody></table></div>
       : <p className="empty">رویدادی برای این فیلتر ثبت نشده است.</p>}
   </section>;

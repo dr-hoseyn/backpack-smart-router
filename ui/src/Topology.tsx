@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState, type RefObject } from 'react';
 import type { Backend, BackendStatus, Config, Status } from './api';
-import { fmt, formatRate, states, strategies, timestamp } from './display';
+import { fmt, formatRate, percent, states, strategies, timestamp } from './display';
 import './topology.css';
 
 type Route = { backend: Backend; group: string; metrics?: BackendStatus };
@@ -101,10 +101,10 @@ function WireCanvas({ map, branches, ingress, light }: {
           ctx.moveTo(from.x, from.bottom);
           ctx.lineTo(core.x, core.top);
         } else {
-          curve({ x: from.left, y: from.y }, { x: core.right, y: core.y });
+          curve({ x: from.right, y: from.y }, { x: core.left, y: core.y });
         }
       });
-      const bus = area.width - 11;
+      const bus = 11;
       if (vertical && targets.length) {
         const elbow = core.bottom + 11;
         paint(ingress, ingress === 'flow' ? 4 : 2, () => {
@@ -119,9 +119,9 @@ function WireCanvas({ map, branches, ingress, light }: {
         paint(branch.signal, width, () => {
           if (vertical) {
             ctx.moveTo(bus, target.y);
-            ctx.lineTo(target.right, target.y);
+            ctx.lineTo(target.left, target.y);
           } else {
-            curve({ x: core.left, y: core.y }, { x: target.right, y: target.y });
+            curve({ x: core.right, y: core.y }, { x: target.left, y: target.y });
           }
         });
       }
@@ -149,9 +149,9 @@ function MapNode({ route, branch, selected, onSelect }: {
     </span>
     <span className="map-node-address" dir="ltr">{backend.tcp || backend.udp}</span>
     <span className="map-node-stats">
-      <span><bdi>{fmt(metrics?.active)}</bdi> اتصال</span>
-      <bdi className="map-throughput">{formatRate(rate(metrics))}</bdi>
-      {branch.share !== undefined && <span className="map-share" aria-label="سهم ترافیک مسیر">{fmt(branch.share * 100)}٪</span>}
+      <span><bdi dir="ltr">{fmt(metrics?.active)}</bdi> اتصال</span>
+      <bdi className="map-throughput" dir="ltr">{formatRate(rate(metrics))}</bdi>
+      {branch.share !== undefined && <bdi className="map-share" dir="ltr" aria-label="سهم ترافیک مسیر">{percent(branch.share * 100)}</bdi>}
     </span>
   </button>;
 }
@@ -163,7 +163,7 @@ function RouterListeners({ config }: { config: Config | null }) {
   ]).filter(Boolean))];
   if (!listeners.length) return null;
   return <span className="router-listeners" aria-label="پورت‌های موتور">
-    {listeners.map(port => <bdi key={port}>{port}</bdi>)}
+    {listeners.map(port => <bdi key={port} dir="ltr">{port}</bdi>)}
   </span>;
 }
 
@@ -199,9 +199,9 @@ export function RouteTopology({ status, config, light, openBackend }: {
       <WireCanvas map={map} branches={branches} ingress={ingress} light={light} />
       <div className="map-node map-source" data-map-source>
         <strong>ورودی ترافیک</strong>
-        {publicIngress && <bdi className="map-node-address">{publicIngress}</bdi>}
-        <bdi className="source-rate">{formatRate(live ? live.rxRate + live.txRate : undefined)}</bdi>
-        <span className="map-node-meta">{fmt(live?.active)} اتصال و جریان فعال</span>
+        {publicIngress && <bdi className="map-node-address" dir="ltr">{publicIngress}</bdi>}
+        <bdi className="source-rate" dir="ltr">{formatRate(live ? live.rxRate + live.txRate : undefined)}</bdi>
+        <span className="map-node-meta"><bdi dir="ltr">{fmt(live?.active)}</bdi> اتصال و جریان فعال</span>
       </div>
       <div className="map-node map-router" data-map-router>
         <span className="router-name">موتور <bdi>Smart Router</bdi></span>
@@ -221,10 +221,10 @@ export function RouteTopology({ status, config, light, openBackend }: {
           <td><button type="button" className="route-name-button" aria-pressed={selection === b.id} onClick={() => select(b.id)}>{b.name}</button>
             <small dir="ltr">{b.tcp || b.udp}</small></td>
           <td><StatusBadge state={metrics?.state} /></td>
-          <td>{fmt(metrics?.active)}</td>
-          <td><bdi>{formatRate(rate(metrics))}</bdi></td>
-          <td>{share === undefined ? '—' : `${fmt(share * 100)}٪`}</td>
-          <td>{metrics?.rtt ? <bdi>{fmt(metrics.rtt)} ms</bdi> : '—'}</td>
+          <td><bdi dir="ltr">{fmt(metrics?.active)}</bdi></td>
+          <td><bdi dir="ltr">{formatRate(rate(metrics))}</bdi></td>
+          <td><bdi dir="ltr">{percent(share === undefined ? undefined : share * 100)}</bdi></td>
+          <td>{metrics?.rtt ? <bdi dir="ltr">{fmt(metrics.rtt)} ms</bdi> : '—'}</td>
           </tr>;
         })}</tbody>
       </table>
@@ -243,11 +243,11 @@ export function RouteTopology({ status, config, light, openBackend }: {
         </div>
       </div>
       <dl className="route-details">
-        <div><dt>دریافت / ارسال</dt><dd><bdi>{formatRate(selected.metrics?.rxRate)} / {formatRate(selected.metrics?.txRate)}</bdi></dd></div>
-        <div><dt>TCP / UDP فعال</dt><dd><bdi>{fmt(selected.metrics?.tcpActive)} / {fmt(selected.metrics?.udpActive)}</bdi></dd></div>
-        <div><dt>سهم ترافیک</dt><dd>{selectedBranch?.share === undefined ? '—' : `${fmt(selectedBranch.share * 100)}٪`}</dd></div>
-        <div><dt>تأخیر {selected.metrics?.verified ? 'آزمون سرتاسری' : 'بررسی مسیر'}</dt><dd>{selected.metrics?.rtt ? <bdi>{fmt(selected.metrics.rtt)} ms</bdi> : '—'}</dd></div>
-        <div><dt>آخرین آزمون موفق</dt><dd>{selected.metrics?.lastOK && !selected.metrics.lastOK.startsWith('0001') ? timestamp(selected.metrics.lastOK) : '—'}</dd></div>
+        <div><dt>دریافت / ارسال</dt><dd><bdi dir="ltr">{formatRate(selected.metrics?.rxRate)} / {formatRate(selected.metrics?.txRate)}</bdi></dd></div>
+        <div><dt>TCP / UDP فعال</dt><dd><bdi dir="ltr">{fmt(selected.metrics?.tcpActive)} / {fmt(selected.metrics?.udpActive)}</bdi></dd></div>
+        <div><dt>سهم ترافیک</dt><dd><bdi dir="ltr">{percent(selectedBranch?.share == null ? undefined : selectedBranch.share * 100)}</bdi></dd></div>
+        <div><dt>تأخیر {selected.metrics?.verified ? 'آزمون سرتاسری' : 'بررسی مسیر'}</dt><dd>{selected.metrics?.rtt ? <bdi dir="ltr">{fmt(selected.metrics.rtt)} ms</bdi> : '—'}</dd></div>
+        <div><dt>آخرین آزمون موفق</dt><dd><bdi dir="ltr">{selected.metrics?.lastOK && !selected.metrics.lastOK.startsWith('0001') ? timestamp(selected.metrics.lastOK) : '—'}</bdi></dd></div>
       </dl>
       {selected.metrics?.failure && <p className="error" dir="auto">{selected.metrics.failure}</p>}
     </div>}
