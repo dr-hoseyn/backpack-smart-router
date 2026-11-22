@@ -28,12 +28,30 @@ type meteredWriter struct {
 
 func (writer meteredWriter) Write(data []byte) (int, error) {
 	count, err := writer.dst.Write(data)
+	writer.record(count)
+	return count, err
+}
+
+func (writer meteredWriter) record(count int) {
 	if count > 0 {
 		writer.last.Store(time.Now().UnixNano())
 		writer.group.Add(uint64(count))
 		writer.total.Add(uint64(count))
 	}
-	return count, err
+}
+
+func copyTCP(dst, src *net.TCPConn, writer meteredWriter) error {
+	if handled, err := spliceTCP(dst, src, writer); handled {
+		return err
+	}
+	return copyTCPBuffered(src, writer)
+}
+
+func copyTCPBuffered(src *net.TCPConn, writer meteredWriter) error {
+	buffer := tcpBuffers.Get().(*[32 * 1024]byte)
+	defer tcpBuffers.Put(buffer)
+	_, err := io.CopyBuffer(writer, struct{ io.Reader }{src}, buffer[:])
+	return err
 }
 
 func (e *Engine) acceptTCP(ctx context.Context, listener net.Listener, group string, wg *sync.WaitGroup) error {
@@ -92,10 +110,8 @@ func (e *Engine) forwardTCP(ctx context.Context, client *net.TCPConn, group stri
 	defer e.flows.Delete(client)
 	var wg sync.WaitGroup
 	copyHalf := func(dst, src *net.TCPConn, backend, total *atomic.Uint64) {
-		buffer := tcpBuffers.Get().(*[32 * 1024]byte)
-		defer tcpBuffers.Put(buffer)
 		writer := meteredWriter{dst: dst, last: &activity.last, group: backend, total: total}
-		if _, err := io.CopyBuffer(writer, struct{ io.Reader }{src}, buffer[:]); err != nil {
+		if err := copyTCP(dst, src, writer); err != nil {
 			dst.Close()
 			src.Close()
 		}
