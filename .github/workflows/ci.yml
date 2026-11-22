@@ -32,7 +32,7 @@ jobs:
         run: |
           npm --prefix ui ci
           npm --prefix ui run build
-          for script in install.sh deploy/*.sh; do bash -n "$script"; done
+          for script in install.sh install-online.sh deploy/*.sh; do bash -n "$script"; done
           version=v0.0.0-ci
           if [[ $GITHUB_REF_TYPE == tag ]]; then version=$GITHUB_REF_NAME; fi
           bash deploy/package.sh "$version" amd64
@@ -61,6 +61,21 @@ jobs:
           name: linux-packages
           path: bin/
           if-no-files-found: error
+
+  online-install:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install the public package and check initial login output
+        shell: bash
+        run: |
+          log=$(mktemp)
+          trap 'rm -f -- "$log"' EXIT
+          cat install-online.sh | bash >"$log"
+          grep -Fxq 'Initial login: admin' "$log"
+          grep -Eq '^Initial password: [[:xdigit:]]{40}$' "$log"
+          grep -Fxq 'Default web panel: http://127.0.0.1:9080/' "$log"
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:9080/
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

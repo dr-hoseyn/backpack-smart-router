@@ -7,6 +7,16 @@ management and forwarding services independently.
 - [Persian installation and operations guide](README.fa.md)
 - [Ubuntu packages and SHA-256 checksums](https://github.com/dr-hoseyn/backpack-smart-router/releases)
 
+## One-line Ubuntu installation
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/backpack-smart-router/main/install-online.sh | bash
+```
+
+The installer checks the package SHA-256 and prints the default panel URL
+and, on a fresh install, the initial administrator credentials. The panel
+listens on the server's loopback interface by default.
+
 ```text
 v2rayNG → public router listener → selected private VM entrance → existing tunnel → egress
 ```

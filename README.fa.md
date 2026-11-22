@@ -4,6 +4,16 @@
 
 ## نصب روی Ubuntu
 
+### نصب تک‌خطی
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/backpack-smart-router/main/install-online.sh | bash
+```
+
+اسکریپت بستهٔ مناسب معماری سرور را دانلود و SHA-256 آن را بررسی می‌کند. پس از نصب، آدرس پیش‌فرض پنل و در نصب تازه نام کاربری `admin` و رمز تصادفی اولیه در همان ترمینال نمایش داده می‌شوند. در ارتقا، رمز فعلی حفظ می‌شود.
+
+### نصب دستی از بستهٔ انتشار
+
 بستهٔ معماری میزبان و فایل `SHA256SUMS` را از صفحهٔ انتشار بگیرید. مقدار SHA-256 بسته را با فایل انتشار مقایسه کنید. [بسته‌های انتشار](https://github.com/dr-hoseyn/backpack-smart-router/releases)
 
 ```sh
