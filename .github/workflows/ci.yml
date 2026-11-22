@@ -1,0 +1,79 @@
+name: Test and package
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version: '1.27.4'
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Go tests
+        run: |
+          test -z "$(gofmt -l cmd internal)"
+          go vet ./...
+          go test -race ./...
+          go test -run '^$' -bench . -benchmem ./internal/router
+          BACKPACK_TEST_CONNECTIONS=5000 go test -count=1 -run TestConcurrentForwarding -v ./internal/router
+      - name: Build panel and packages
+        run: |
+          npm --prefix ui ci
+          npm --prefix ui run build
+          for script in install.sh deploy/*.sh; do bash -n "$script"; done
+          version=v0.0.0-ci
+          if [[ $GITHUB_REF_TYPE == tag ]]; then version=$GITHUB_REF_NAME; fi
+          bash deploy/package.sh "$version" amd64
+          bash deploy/package.sh "$version" arm64
+          (cd bin && sha256sum ./*.tar.gz > SHA256SUMS)
+      - name: Install and restart on Ubuntu
+        shell: bash
+        run: |
+          smoke=$(mktemp -d)
+          tar -xzf bin/*-amd64.tar.gz -C "$smoke"
+          cd "$smoke"/backpack-smart-router-*
+          if ! sudo bash install.sh >"$smoke/install.log"; then
+            sudo journalctl -u backpack-router-engine -u backpack-router-panel --lines 50 --no-pager
+            exit 1
+          fi
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:9080/
+          sudo curl --fail --unix-socket /run/backpack-router/control.sock http://router/status
+          pid=$(systemctl show backpack-router-engine -p MainPID --value)
+          sudo systemctl restart backpack-router-panel
+          curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:9080/
+          test "$pid" = "$(systemctl show backpack-router-engine -p MainPID --value)"
+          sudo bash deploy/uninstall.sh
+          rm -rf -- "$smoke"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: linux-packages
+          path: bin/
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: linux-packages
+          path: packages
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" packages/* --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes

@@ -1,0 +1,10 @@
+/bin/
+/ui/node_modules/
+/ui/dist/
+/state/
+*.sqlite*
+*.sock
+*.exe
+*.pem
+*.key
+.env*

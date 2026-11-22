@@ -1,0 +1,22 @@
+[Unit]
+Description=BackPack Smart Router tunnel probe
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=backpack-agent
+Group=backpack-agent
+EnvironmentFile=/etc/backpack-router/agent.env
+ExecStart=/opt/backpack-router/current/backpack-router agent -listen ${AGENT_LISTEN} -socks ${AGENT_SOCKS} -target ${AGENT_TARGET} -interface ${AGENT_INTERFACE}
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

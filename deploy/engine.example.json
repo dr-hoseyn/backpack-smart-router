@@ -1,0 +1,95 @@
+{
+  "revision": 1,
+  "strategy": "weighted-least",
+  "maxFlows": 12000,
+  "dialTimeoutMS": 1500,
+  "tcpIdleSeconds": 600,
+  "udpIdleSeconds": 90,
+  "checkIntervalMS": 3000,
+  "checkTimeoutMS": 1200,
+  "failures": 3,
+  "recoveries": 2,
+  "cooldownSeconds": 10,
+  "weights": {},
+  "groups": [
+    {
+      "id": "germany",
+      "tcp": "0.0.0.0:14443",
+      "udp": "",
+      "backends": [
+        {
+          "id": "de-1",
+          "name": "مسیر آلمان 1",
+          "tcp": "10.0.0.11:14443",
+          "udp": "",
+          "probe": "",
+          "weight": 1,
+          "capacity": 2000,
+          "rateMbps": 0,
+          "enabled": false,
+          "drain": false
+        },
+        {
+          "id": "de-2",
+          "name": "مسیر آلمان 2",
+          "tcp": "10.0.0.12:14443",
+          "udp": "",
+          "probe": "",
+          "weight": 1,
+          "capacity": 2000,
+          "rateMbps": 0,
+          "enabled": false,
+          "drain": false
+        },
+        {
+          "id": "de-3",
+          "name": "مسیر آلمان 3",
+          "tcp": "10.0.0.13:14443",
+          "udp": "",
+          "probe": "",
+          "weight": 1,
+          "capacity": 2000,
+          "rateMbps": 0,
+          "enabled": false,
+          "drain": false
+        },
+        {
+          "id": "de-4",
+          "name": "مسیر آلمان 4",
+          "tcp": "10.0.0.14:14443",
+          "udp": "",
+          "probe": "",
+          "weight": 1,
+          "capacity": 2000,
+          "rateMbps": 0,
+          "enabled": false,
+          "drain": false
+        },
+        {
+          "id": "de-5",
+          "name": "مسیر آلمان 5",
+          "tcp": "10.0.0.15:14443",
+          "udp": "",
+          "probe": "",
+          "weight": 1,
+          "capacity": 2000,
+          "rateMbps": 0,
+          "enabled": false,
+          "drain": false
+        },
+        {
+          "id": "de-6",
+          "name": "مسیر آلمان 6",
+          "tcp": "10.0.0.16:14443",
+          "udp": "",
+          "probe": "",
+          "weight": 1,
+          "capacity": 2000,
+          "rateMbps": 0,
+          "enabled": false,
+          "drain": false
+        }
+      ]
+    }
+  ]
+}
