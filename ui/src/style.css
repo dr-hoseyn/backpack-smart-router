@@ -70,9 +70,6 @@ nav [aria-current=page]{border-color:var(--line);background:var(--accent-bg);col
 .legend .tx::before{background:var(--secondary)}
 .empty{min-height:5.6rem;display:grid;place-items:center;padding:.8rem;color:var(--muted);text-align:center}
 .chart-card .empty{min-height:12rem}
-.route-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(9rem,1fr));gap:.6rem;margin-top:.8rem}
-.route-grid article{display:grid;justify-items:start;gap:.3rem;padding:.72rem;border:1px solid var(--line);border-radius:8px}
-.route-grid article>span:not(.badge){font-size:.8rem;color:var(--muted)}
 .badge{display:inline-flex;align-items:center;gap:.35rem;color:var(--muted);font-size:.8rem;white-space:nowrap}
 .badge.healthy{color:var(--accent)}
 .badge.unhealthy{color:var(--bad)}

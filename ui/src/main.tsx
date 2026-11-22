@@ -3,14 +3,11 @@ import { createRoot } from 'react-dom/client';
 import '@fontsource-variable/vazirmatn';
 import './style.css';
 import { APIError, request, type Audit, type Backend, type BackendStatus, type Config, type Point, type Session, type Status } from './api';
+import { fa, fmt, strategies, timestamp } from './display';
+import { RouteTopology, StatusBadge } from './Topology';
 
-const fa = new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 1 });
-const timestamp = (value: string | number) => new Date(value).toLocaleString('fa-IR', { dateStyle: 'short', timeStyle: 'medium' });
-const fmt = (value?: number | null) => value == null ? '—' : fa.format(value);
 const mbps = (value?: number) => value === undefined ? '—' : fa.format(value * 8 / 1e6);
 const traffic = (value?: number) => value === undefined ? '—' : fa.format(value / 1e9);
-const states: Record<string, string> = { healthy: 'سالم', unhealthy: 'قطع', draining: 'در حال تخلیه', disabled: 'غیرفعال', checking: 'در حال بررسی' };
-const strategies: Record<string, string> = { 'weighted-least': 'کمترین اتصال وزنی', 'weighted-round-robin': 'چرخشی وزنی', 'least-load': 'کمترین بار', 'least-rtt': 'کمترین تأخیر', adaptive: 'تطبیقی' };
 const kinds: Record<string, string> = { healthy: 'بازیابی مسیر', unhealthy: 'خرابی مسیر', started: 'راه‌اندازی موتور', configuration: 'تغییر پیکربندی', 'dial-failover': 'تغییر مسیر اتصال', 'manual-check': 'آزمون دستی', login: 'ورود مدیر', 'admin-created': 'ایجاد حساب', 'admin-removed': 'حذف حساب', 'password-changed': 'تغییر رمز' };
 const ranges: Record<string, string> = { '5m': '۵ دقیقه', '15m': '۱۵ دقیقه', '1h': '۱ ساعت', '24h': '۲۴ ساعت', '7d': '۷ روز' };
 const blankBackend: Backend = { id: '', name: '', tcp: '', udp: '', probe: '', weight: 1, capacity: 1000, rateMbps: 0, enabled: true, drain: false };
@@ -92,7 +89,9 @@ function Chart({ points, label, light }: { points: Point[]; label: string; light
     : <div className="empty">برای این بازه هنوز نمونهٔ کافی جمع نشده است.</div>;
 }
 
-function Overview({ status, light }: { status: Status | null; light: boolean }) {
+function Overview({ status, cfg, light, openBackend }: {
+  status: Status | null; cfg: Config | null; light: boolean; openBackend: (group: string, id: string) => void;
+}) {
   const [range, setRange] = useState('5m');
   const [points, setPoints] = useState<Point[]>([]);
   const [error, setError] = useState('');
@@ -116,6 +115,7 @@ function Overview({ status, light }: { status: Status | null; light: boolean }) 
   return <>
     <section className="stats">{stats.map(stat => <article className="card stat" key={stat.title}><h2>{stat.title}</h2>
       <div><strong dir="ltr">{stat.value}</strong> <small>{stat.unit}</small></div></article>)}</section>
+    <RouteTopology status={status} config={cfg} light={light} openBackend={openBackend} />
     <section className="card chart-card"><div className="section-title"><div><h2>ترافیک تجمیعی</h2>
       <div className="legend"><span className="rx">دریافت</span><span className="tx">ارسال</span><span>مگابیت بر ثانیه</span></div></div>
       <select aria-label="بازهٔ نمودار" value={range} onChange={event => setRange(event.target.value)}>
@@ -123,26 +123,23 @@ function Overview({ status, light }: { status: Status | null; light: boolean }) 
       </select></div>
       {error ? <p role="alert">{error}</p> : <Chart points={points} label="نمودار نرخ دریافت و ارسال" light={light} />}
     </section>
-    <section className="card route-card"><h2>وضعیت مسیرها</h2><div className="route-grid">
-      {backends.map(b => <article key={b.id}><StatusBadge state={b.state} /><strong>{b.name}</strong>
-        <span>{fmt(b.active)} جریان فعال</span><span dir="ltr">{fmt(b.rtt || null)} ms</span></article>)}
-      {!backends.length && <p>وضعیت مسیرها هنوز در دسترس نیست.</p>}
-    </div></section>
     {status?.decision && <section className="card decision"><h2>آخرین انتخاب مسیر</h2>
       <p>{backends.find(b => b.id === status.decision?.backend)?.name ?? status.decision.backend} · {strategies[status.decision.strategy]} · امتیاز {fmt(status.decision.score)}
         {status.decision.retry && ' · انتخاب دوباره پس از خطای اتصال'}</p></section>}
   </>;
 }
 
-function StatusBadge({ state }: { state?: string }) {
-  return <span className={'badge ' + (state ?? 'checking')}>{states[state ?? ''] ?? 'بدون داده'}</span>;
-}
-
 type Save = (config: Config) => Promise<boolean>;
+type BackendFocus = { group: string; id: string };
 
-function Backends({ cfg, status, csrf, save }: { cfg: Config; status: Status | null; csrf: string; save: Save }) {
-  const [group, setGroup] = useState(cfg.groups[0].id);
-  const [edit, setEdit] = useState<{ previous?: string; row: Backend } | null>(null);
+function Backends({ cfg, status, csrf, save, focus }: {
+  cfg: Config; status: Status | null; csrf: string; save: Save; focus: BackendFocus | null;
+}) {
+  const [group, setGroup] = useState(focus?.group ?? cfg.groups[0].id);
+  const [edit, setEdit] = useState<{ previous?: string; row: Backend } | null>(() => {
+    const row = cfg.groups.find(item => item.id === focus?.group)?.backends?.find(item => item.id === focus?.id);
+    return row ? { previous: row.id, row: { ...row } } : null;
+  });
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const selected = cfg.groups.find(item => item.id === group) ?? cfg.groups[0];
@@ -319,6 +316,7 @@ type Tab = typeof tabs[number];
 
 function Dashboard({ session, signOut, light, setLight }: { session: Session; signOut: () => void; light: boolean; setLight: (state: boolean) => void }) {
   const [tab, setTab] = useState<Tab>('نمای کلی');
+  const [backendFocus, setBackendFocus] = useState<BackendFocus | null>(null);
   const [status, setStatus] = useState<Status | null>(null);
   const [cfg, setCfg] = useState<Config | null>(null);
   const [notice, setNotice] = useState('');
@@ -353,7 +351,7 @@ function Dashboard({ session, signOut, light, setLight }: { session: Session; si
   }
   return <div className="shell"><aside className="sidebar">
     <div className="brand"><span className="logo">B</span><span dir="ltr">BackPack<small>SMART ROUTER</small></span></div>
-    <nav aria-label="بخش‌های پنل">{tabs.map(name => <button key={name} aria-current={tab === name ? 'page' : undefined} onClick={() => setTab(name)}>{name}</button>)}</nav>
+    <nav aria-label="بخش‌های پنل">{tabs.map(name => <button key={name} aria-current={tab === name ? 'page' : undefined} onClick={() => { setBackendFocus(null); setTab(name); }}>{name}</button>)}</nav>
     <div className="account"><bdi>{session.name}</bdi><button className="quiet" onClick={() => void logout()}>خروج</button></div>
     </aside><main className="dashboard"><header className="topbar"><div><h1>{tab}</h1>
       <span className={'connection ' + (connected && status?.online ? 'on' : '')}>
@@ -361,8 +359,9 @@ function Dashboard({ session, signOut, light, setLight }: { session: Session; si
       <Theme light={light} setLight={setLight} /></header>
     {notice && <div className="notice" role="status">{notice}<button className="quiet" onClick={() => setNotice('')}>بستن</button></div>}
     {cfg && status && cfg.revision > status.revision && <p className="notice">نسخهٔ جدید ذخیره شده و در انتظار اعمال روی موتور است.</p>}
-    {tab === 'نمای کلی' && <Overview status={status} light={light} />}
-    {tab === 'ورودی‌ها' && (cfg ? <Backends cfg={cfg} status={status} csrf={session.csrf} save={save} /> : <p>پیکربندی در دسترس نیست.</p>)}
+    {tab === 'نمای کلی' && <Overview status={connected ? status : null} cfg={cfg} light={light}
+      openBackend={(group, id) => { setBackendFocus({ group, id }); setTab('ورودی‌ها'); }} />}
+    {tab === 'ورودی‌ها' && (cfg ? <Backends cfg={cfg} status={status} csrf={session.csrf} save={save} focus={backendFocus} /> : <p>پیکربندی در دسترس نیست.</p>)}
     {tab === 'مسیر‌یابی' && (cfg ? <Routing cfg={cfg} save={save} /> : <p>پیکربندی در دسترس نیست.</p>)}
     {tab === 'رویدادها' && <Events cfg={cfg} />}
     {tab === 'تنظیمات' && <Settings cfg={cfg} session={session} save={save} signOut={signOut} />}

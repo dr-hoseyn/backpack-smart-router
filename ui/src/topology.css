@@ -1,0 +1,182 @@
+.topology-card {
+  container: topology / inline-size;
+  --map-bg: #101b20;
+  --map-dots: #304147;
+  --map-node: #162429;
+  --map-router: #192c38;
+  --map-router-line: #466b87;
+  --map-blue: #a4cbf5;
+  --wire-flow: var(--accent);
+  --wire-idle: #879d9f;
+  --wire-warming: var(--secondary);
+  --wire-down: var(--bad);
+  --wire-quiet: #6f8186;
+}
+
+:root[data-theme=light] .topology-card {
+  --map-bg: #edf4f3;
+  --map-dots: #c4d6d7;
+  --map-node: #fbfdfc;
+  --map-router: #e8f2fa;
+  --map-router-line: #8aaac3;
+  --map-blue: #285981;
+  --wire-idle: #637e83;
+  --wire-quiet: #6d8287;
+}
+
+.topology-title h2 { font-size: 1.2rem; }
+.topology-title p { margin-top: .22rem; font-size: .86rem; }
+
+.view-switch {
+  display: flex;
+  align-items: center;
+  gap: .15rem;
+  padding: .2rem;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+.view-switch button {
+  min-height: 2rem;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  padding: .28rem .8rem;
+}
+.view-switch button[aria-pressed=true] {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.route-map {
+  --map-axis: horizontal;
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(8rem, .8fr) minmax(10rem, 1fr) minmax(14rem, 1.5fr);
+  align-items: center;
+  gap: clamp(2.4rem, 6cqi, 5.5rem);
+  min-block-size: 18rem;
+  margin-block-start: .95rem;
+  padding: clamp(.8rem, 3cqi, 1.6rem);
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: radial-gradient(circle, var(--map-dots) 1px, transparent 1px) 0 0 / 16px 16px, var(--map-bg);
+}
+.map-wires { position: absolute; inset: 0; width: 100%; height: 100%; z-index: -1; pointer-events: none; }
+.map-node {
+  min-width: 0;
+  display: grid;
+  gap: .36rem;
+  padding: .82rem;
+  text-align: start;
+  background: var(--map-node);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 9%);
+}
+.map-source { padding-block: 1rem; }
+.map-node-meta { color: var(--muted); font-size: .78rem; }
+.source-rate { font: 700 clamp(.91rem, 2.7cqi, 1.36rem) ui-monospace, monospace; color: var(--accent); }
+.map-router {
+  border-color: var(--map-router-line);
+  background: var(--map-router);
+  padding-block: 1rem;
+}
+.router-name { color: var(--map-blue); font-size: .82rem; }
+.router-name bdi { font-weight: 750; white-space: nowrap; }
+.map-router > strong { font-size: .92rem; overflow-wrap: anywhere; }
+.router-listeners { display: flex; flex-wrap: wrap; gap: .35rem; }
+.router-listeners bdi {
+  padding: .13rem .35rem;
+  color: var(--map-blue);
+  background: var(--map-bg);
+  border-radius: 5px;
+  font: 500 .7rem ui-monospace, monospace;
+}
+
+.map-endpoints { display: grid; gap: .65rem; min-width: 0; }
+.map-endpoint {
+  --branch-color: var(--wire-quiet);
+  position: relative;
+  width: 100%;
+  border-inline-start: 3px solid var(--branch-color);
+}
+.map-endpoint[data-signal=flow] { --branch-color: var(--wire-flow); }
+.map-endpoint[data-signal=idle] { --branch-color: var(--wire-idle); }
+.map-endpoint[data-signal=warming] { --branch-color: var(--wire-warming); }
+.map-endpoint[data-signal=down] { --branch-color: var(--wire-down); }
+.map-endpoint[aria-pressed=true] {
+  box-shadow: 0 0 0 1px var(--map-router-line), 0 4px 14px rgb(0 0 0 / 9%);
+  background: var(--map-router);
+}
+.map-node-heading, .map-node-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .35rem .55rem;
+}
+.map-node-heading strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.map-endpoint .badge { font-size: .73rem; }
+.map-node-address {
+  overflow-wrap: anywhere;
+  justify-self: start;
+  color: var(--muted);
+  font: 500 .75rem ui-monospace, monospace;
+}
+.map-node-stats { flex-wrap: wrap; font-size: .79rem; color: var(--muted); }
+.map-throughput { color: var(--text); font-weight: 750; white-space: nowrap; }
+.map-endpoint[data-signal=flow] .map-throughput { color: var(--accent); }
+.map-share {
+  padding: .06rem .37rem;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.map-empty { color: var(--muted); font-size: .86rem; box-shadow: none; }
+
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem 1.05rem;
+  list-style: none;
+  margin: .75rem 0 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: .76rem;
+}
+.map-legend li { display: inline-flex; align-items: center; gap: .35rem; }
+.map-legend li span { width: 1.2rem; border-top: 2px solid var(--wire-quiet); }
+.map-legend [data-signal=flow] span { border-top: 4px solid var(--wire-flow); }
+.map-legend [data-signal=idle] span { border-color: var(--wire-idle); }
+.map-legend [data-signal=warming] span { border-top-style: dashed; border-color: var(--wire-warming); }
+.map-legend [data-signal=down] span { border-top-style: dotted; border-color: var(--wire-down); }
+.map-legend [data-signal=quiet] span { border-top-style: dotted; }
+
+.topology-table th, .topology-table td { white-space: nowrap; }
+.route-name-button { background: transparent; border-color: transparent; padding-inline: .25rem; font-weight: 750; }
+.route-name-button[aria-pressed=true] { color: var(--accent); }
+.route-inspector { border-top: 1px solid var(--line); margin-top: .85rem; padding-top: .8rem; }
+.inspector-title { display: flex; gap: .6rem; flex-wrap: wrap; align-items: center; }
+.inspector-title h3 { margin: 0; }
+.route-details {
+  margin-block: .6rem .1rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: .45rem;
+}
+.route-details > div { border: 1px solid var(--line); border-radius: 8px; padding: .5rem; }
+.route-details dt { color: var(--muted); font-size: .73rem; }
+.route-details dd { margin-top: .18rem; color: var(--text); font-weight: 650; font-size: .8rem; overflow-wrap: anywhere; }
+
+@container topology (max-width: 660px) {
+  .route-map { --map-axis: vertical; grid-template-columns: minmax(0, 1fr); gap: 1.45rem; }
+  .map-source, .map-router { width: min(15rem, 100%); justify-self: center; }
+  .map-endpoints { margin-inline-start: 1.35rem; }
+}
