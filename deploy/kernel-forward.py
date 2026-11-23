@@ -2,10 +2,14 @@
 """Linux TCP forwarding for a single public IPv4 address and backend pool."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import ipaddress
 import json
 import logging
 import re
+import shutil
+import socket
+import ssl
 import subprocess
 import time
 from pathlib import Path
@@ -34,23 +38,38 @@ def config(path):
         if not re.fullmatch(r"[\w.-]{1,15}", cfg[key], re.ASCII):
             raise ValueError(f"invalid interface {key}")
     cfg["backends"] = [str(ipaddress.IPv4Address(ip)) for ip in cfg["backends"]]
+    cfg.setdefault("backend_port", 443)
+    cfg.setdefault("test_ports", [])
+    tls_name = cfg.get("tls_server_name", "")
+    if not isinstance(tls_name, str) or (tls_name and (
+            len(tls_name) > 253 or not all(
+                re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                for label in tls_name.split(".")))):
+        raise ValueError("invalid TLS server name")
+    mode = cfg.setdefault("tls_health_policy", "require")
+    if mode not in ("observe", "require"):
+        raise ValueError("TLS health policy must be observe or require")
+    rate = cfg.setdefault("go_fallback_syn_rate", 0)
+    if type(rate) is not int or not 0 <= rate <= 100000:
+        raise ValueError("invalid Go fallback SYN rate")
     ports = cfg["public_ports"] + cfg["test_ports"]
     if (len(cfg["backends"]) != len(set(cfg["backends"])) or
-            len(cfg["backends"]) != len(cfg["test_ports"]) or not cfg["backends"] or
+            (cfg["test_ports"] and len(cfg["backends"]) != len(cfg["test_ports"])) or not cfg["backends"] or
             not cfg["public_ports"] or len(ports) != len(set(ports)) or
-            any(type(port) is not int or not 1 <= port <= 65535 for port in ports)):
+            any(type(port) is not int or not 1 <= port <= 65535 for port in [*ports, cfg["backend_port"]])):
         raise ValueError("invalid backend or port configuration")
     return cfg
 
 
 def forward_rules(cfg):
     wan, lan = json.dumps(cfg["public_if"]), json.dumps(cfg["backend_if"])
+    backend_port = cfg["backend_port"]
     ports = "{ " + ", ".join(map(str, cfg["public_ports"] + cfg["test_ports"])) + " }"
     scope = f"ct status dnat ct original ip daddr {cfg['public_ip']} ct original proto-dst {ports}"
     rules = [f"flush chain ip {TABLE} forward"]
     for direction, match, address in (
-        ("in", f"iifname {wan} oifname {lan} tcp dport 443", "daddr"),
-        ("out", f"iifname {lan} oifname {wan} tcp sport 443 ct state established", "saddr"),
+        ("in", f"iifname {wan} oifname {lan} tcp dport {backend_port}", "daddr"),
+        ("out", f"iifname {lan} oifname {wan} tcp sport {backend_port} ct state established", "saddr"),
     ):
         entries = []
         for index, ip in enumerate(cfg["backends"]):
@@ -70,10 +89,38 @@ def forward_rules(cfg):
     return rules
 
 
+def configure_go_admission(cfg):
+    rate = cfg["go_fallback_syn_rate"]
+    if not rate:
+        try:
+            nft("list", "chain", "ip", TABLE, "go_admission")
+        except subprocess.CalledProcessError:
+            return
+    rules = [
+        f"add chain ip {TABLE} go_admission {{ type filter hook input priority filter; policy accept; }}",
+        f"add chain ip {TABLE} go_limit",
+        f"flush chain ip {TABLE} go_admission",
+        f"flush chain ip {TABLE} go_limit",
+    ]
+    if rate:
+        wan = json.dumps(cfg["public_if"])
+        ports = "{ " + ", ".join(map(str, cfg["public_ports"])) + " }"
+        scope = f"ct status dnat ct original ip daddr {cfg['public_ip']} ct original proto-dst {ports}"
+        rules += [
+            f"add rule ip {TABLE} go_admission iifname {wan} {scope} ct state new "
+            "tcp flags syn / fin,syn,rst,ack ct mark & 0x20000000 == 0 jump go_limit",
+            f"add rule ip {TABLE} go_limit limit rate over {rate}/second burst {rate * 2} packets counter drop",
+            f"add rule ip {TABLE} go_limit ct mark set ct mark | 0x20000000 counter",
+        ]
+    apply(rules)
+
+
 def initialize(cfg):
     if TABLE in [line.split()[-1] for line in nft("list", "tables", "ip").splitlines() if line]:
+        configure_go_admission(cfg)
         return
     public, source = cfg["public_ip"], cfg["source_ip"]
+    backend_port = cfg["backend_port"]
     wan, lan = json.dumps(cfg["public_if"]), json.dumps(cfg["backend_if"])
     backends = "{ " + ", ".join(cfg["backends"]) + " }"
     ports = "{ " + ", ".join(map(str, cfg["public_ports"] + cfg["test_ports"])) + " }"
@@ -87,27 +134,28 @@ def initialize(cfg):
         f"add rule ip {TABLE} prerouting iifname {wan} ip daddr {public} "
         f"tcp dport {ports} tcp flags syn / fin,syn,rst,ack jump dispatch",
         f"add rule ip {TABLE} postrouting iifname {wan} oifname {lan} "
-        f"{scope} ip daddr {backends} tcp dport 443 snat to {source}",
+        f"{scope} ip daddr {backends} tcp dport {backend_port} snat to {source}",
     ]
     for index, ip in enumerate(cfg["backends"]):
         rules += [
             f"add chain ip {TABLE} backend_{index}",
             f"add counter ip {TABLE} backend_{index}_new",
             f"add rule ip {TABLE} backend_{index} meta l4proto tcp "
-            f"counter name backend_{index}_new dnat to {ip}:443",
+            f"counter name backend_{index}_new dnat to {ip}:{backend_port}",
         ]
         for direction in ("in", "out"):
             rules.append(f"add counter ip {TABLE} backend_{index}_{direction}")
     rules.extend(forward_rules(cfg))
     nft("-c", "-f", "-", rules="\n".join(rules) + "\n")
     apply(rules)
+    configure_go_admission(cfg)
 
 
 def dispatch_rules(cfg, share=0, weights=None, test=False):
     rules = [f"flush chain ip {TABLE} dispatch"]
     if test:
         for port, ip in zip(cfg["test_ports"], cfg["backends"]):
-            rules.append(f"add rule ip {TABLE} dispatch tcp dport {port} counter dnat to {ip}:443")
+            rules.append(f"add rule ip {TABLE} dispatch tcp dport {port} counter dnat to {ip}:{cfg['backend_port']}")
     if share and weights:
         ports = "{ " + ", ".join(map(str, cfg["public_ports"])) + " }"
         entries = []
@@ -142,12 +190,60 @@ def counters(cfg):
     return {ip: sum(directions) for ip, directions in traffic_counters(cfg).items()}
 
 
+def active_connections(cfg):
+    command = shutil.which("conntrack")
+    if command is None:
+        return {}
+    result = subprocess.run(
+        [command, "-L", "-f", "ipv4", "-p", "tcp", "--state", "ESTABLISHED",
+         "--orig-dst", cfg["public_ip"], "--reply-dst", cfg["source_ip"]],
+        text=True, capture_output=True, check=True, timeout=5,
+    )
+    active = dict.fromkeys(cfg["backends"], 0)
+    ports = set(cfg["public_ports"] + cfg["test_ports"])
+    for line in result.stdout.splitlines():
+        sources = re.findall(r"\bsrc=([\d.]+)", line)
+        destination = re.search(r"\bdport=(\d+)", line)
+        if len(sources) == 2 and sources[1] in active and destination and int(destination[1]) in ports:
+            active[sources[1]] += 1
+    return active
+
+
+def tls_snapshot(cfg, context):
+    addresses = cfg["backends"]
+    with ThreadPoolExecutor(max_workers=len(addresses)) as pool:
+        def probe(address):
+            return tls_reachable(context, cfg["tls_server_name"], cfg["backend_port"], address)
+        return dict(zip(addresses, pool.map(probe, addresses)))
+
+
 def publish(cfg, path):
+    context = ssl.create_default_context() if cfg.get("tls_server_name") else None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        publish_metrics(cfg, path, pool, context)
+
+
+def publish_metrics(cfg, path, pool, context):
     output = Path(path)
     pending = output.with_suffix(".tmp")
+    future, tls, next_probe = None, {}, 0
     while True:
+        if future is not None and future.done():
+            tls, future = future.result(), None
+        now = time.monotonic()
+        if context is not None and future is None and now >= next_probe:
+            future = pool.submit(tls_snapshot, cfg, context)
+            next_probe = now + 12
+        try:
+            active = active_connections(cfg)
+        except (OSError, subprocess.SubprocessError) as error:
+            logging.warning("kernel connection count unavailable: %s", error)
+            active = {}
         snapshot = {
-            "backends": {f"{ip}:443": {"rx": rx, "tx": tx}
+            "group": cfg.get("control_group", ""),
+            "backends": {f"{ip}:{cfg['backend_port']}": {"rx": rx, "tx": tx,
+                          **({"tls": tls[ip]} if ip in tls else {}),
+                          **({"active": active[ip]} if ip in active else {})}
                          for ip, (rx, tx) in traffic_counters(cfg).items()},
         }
         pending.write_text(json.dumps(snapshot), encoding="utf-8")
@@ -164,11 +260,39 @@ def proxy_status(cfg):
     return json.loads(result.stdout)
 
 
-def healthy_backends(cfg):
-    addresses = {f"{ip}:443": ip for ip in cfg["backends"]}
-    return {addresses[backend["tcp"]]: backend for backend in proxy_status(cfg)["backends"]
-            if backend["tcp"] in addresses and backend["state"] == "healthy"
-            and backend["enabled"] and not backend["drain"]}
+def tls_reachable(context, server_name, port, address):
+    try:
+        with socket.create_connection((address, port), timeout=4) as raw:
+            with context.wrap_socket(raw, server_hostname=server_name):
+                return True
+    except OSError as error:
+        logging.debug("TLS probe failed for %s:%s: %s", address, port, error)
+        return False
+
+
+def healthy_backends(cfg, tls=None, missed=None):
+    addresses = {f"{ip}:{cfg['backend_port']}": ip for ip in cfg["backends"]}
+    eligible = {addresses[backend["tcp"]]: backend for backend in proxy_status(cfg)["backends"]
+                if backend["tcp"] in addresses and backend["state"] == "healthy"
+                and (not cfg.get("control_group") or backend["group"] == cfg["control_group"])
+                and backend["enabled"] and not backend["drain"]}
+    if not tls:
+        return eligible
+    if missed is None:
+        missed = {}
+    for address in missed.keys() - eligible.keys():
+        del missed[address]
+    if not eligible:
+        return eligible
+    with ThreadPoolExecutor(max_workers=len(eligible)) as pool:
+        def probe(address):
+            return tls_reachable(tls, cfg["tls_server_name"], cfg["backend_port"], address)
+        for address, healthy in zip(eligible, pool.map(probe, eligible)):
+            if healthy:
+                missed[address] = 0
+            elif address in missed:
+                missed[address] += 1
+    return {address: backend for address, backend in eligible.items() if missed.get(address, 2) < 2}
 
 
 def measure(cfg, seconds):
@@ -220,12 +344,17 @@ def run(cfg, share_file):
     updated = time.monotonic()
     applied = None
     fallback = dispatch_rules(cfg)
+    tls = ssl.create_default_context() if cfg.get("tls_server_name") and cfg["tls_health_policy"] == "require" else None
+    missed = {}
     while True:
         try:
-            share = int(Path(share_file).read_text().strip())
+            try:
+                share = int(Path(share_file).read_text().strip())
+            except FileNotFoundError:
+                share = SLOTS
             if not 0 <= share <= SLOTS:
                 raise ValueError("traffic share must be between 0 and 1000")
-            health = healthy_backends(cfg)
+            health = healthy_backends(cfg, tls, missed)
             current = counters(cfg)
             now = time.monotonic()
             for ip, count in current.items():
@@ -254,13 +383,15 @@ def run(cfg, share_file):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config")
-    parser.add_argument("command", choices=["init", "tune", "test", "disable", "run", "counters", "publish", "measure"])
+    parser.add_argument("command", choices=["check", "init", "tune", "test", "disable", "run", "counters", "publish", "measure"])
     parser.add_argument("--share-file", default="/etc/backpack-router/kernel-forward.share")
     parser.add_argument("--metrics-file", default="/run/backpack-router-kernel/traffic.json")
     parser.add_argument("--seconds", type=int, default=15)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = config(args.config)
+    if args.command == "check":
+        return
     if args.command == "disable":
         apply(dispatch_rules(cfg))
     elif args.command == "publish":

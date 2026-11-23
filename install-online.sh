@@ -48,10 +48,13 @@ if [[ $EUID != 0 ]]; then
 fi
 
 status=0
-"${installer[@]}" > "$work/install.log" || status=$?
+"${installer[@]}" "$@" > "$work/install.log" || status=$?
 cat "$work/install.log"
 if (( status != 0 )); then
   exit "$status"
+fi
+if [[ ${1:-} == --agent ]] || grep -Eq '^(Default web panel|Public HTTPS web panel): ' "$work/install.log"; then
+  exit 0
 fi
 printf '\nDefault web panel: http://127.0.0.1:9080/\n'
 if systemctl is-active --quiet backpack-router-public.socket; then

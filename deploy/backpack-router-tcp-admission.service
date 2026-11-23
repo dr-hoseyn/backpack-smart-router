@@ -1,0 +1,15 @@
+[Unit]
+Description=BackPack Smart Router public TCP admission limits
+After=network-online.target nftables.service
+Before=backpack-router-kernel-forward.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/backpack-router/tcp-admission.nft
+ExecReload=/usr/sbin/nft -f /etc/backpack-router/tcp-admission.nft
+ExecStop=-/usr/sbin/nft delete table ip backpack_router_tcp_admission
+
+[Install]
+WantedBy=multi-user.target

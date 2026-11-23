@@ -4,7 +4,7 @@ import '@fontsource-variable/vazirmatn';
 import './style.css';
 import { APIError, request, type Audit, type Backend, type BackendStatus, type Config, type Point, type Session, type Status } from './api';
 import { clockFormat, fmt, numberFormat, percent, strategies, timestamp } from './display';
-import { RouteTopology, StatusBadge } from './Topology';
+import { RouteHealth, RouteTopology } from './Topology';
 
 const mbps = (value?: number) => value === undefined ? '—' : fmt(value * 8 / 1e6);
 const traffic = (value?: number) => value === undefined ? '—' : fmt(value / 1e9);
@@ -107,16 +107,28 @@ function Overview({ status, cfg, light, openBackend }: {
     return () => { current = false; clearInterval(timer); };
   }, [range]);
   const backends = status?.backends ?? [];
+  const kernelTraffic = status?.kernelTraffic === 'included';
+  const healthy = backends.filter(backend => backend.state === 'healthy' && backend.kernelTLS !== false).length;
   const stats = [
-    { title: 'ورودی سالم', value: status?.online ? fmt(backends.filter(b => b.state === 'healthy').length) + ' / ' + fmt(backends.length) : '—', unit: 'مسیر' },
-    { title: status?.kernelTraffic ? 'جریان فعال در Go' : 'اتصال و جریان فعال', value: fmt(status?.online ? status.active : undefined), unit: 'جریان' },
-    { title: 'دریافت / ارسال', value: status?.online ? mbps(status.rxRate) + ' / ' + mbps(status.txRate) : '—', unit: 'Mbps' },
+    { title: status?.kernelTraffic && !status.kernelConnections ? 'اتصال‌های فعال Go' : 'اتصال‌ها و جریان‌های فعال',
+      value: fmt(status?.online ? status.active : undefined), unit: '' },
+    { title: 'مقصدهای سالم', value: status?.online ? fmt(healthy) + ' / ' + fmt(backends.length) : '—', unit: 'مسیر' },
     { title: 'ترافیک عبوری', value: traffic(status?.online ? status.rx + status.tx : undefined), unit: 'GB' },
   ];
   return <>
     {status?.kernelTraffic === 'unavailable' && <p className="notice" role="status">آمار مسیر کرنل فعلاً در دسترس نیست. اعداد ترافیک فقط مسیر Go را نشان می‌دهند.</p>}
-    <section className="stats">{stats.map(stat => <article className="card stat" key={stat.title}><h2>{stat.title}</h2>
-      <div><strong dir="ltr">{stat.value}</strong> <small>{stat.unit}</small></div></article>)}</section>
+    <section className="stats" aria-label="شاخص‌های ترافیک">
+      <article className="card stat stat-traffic">
+        <div className="stat-heading"><h2>ترافیک لحظه‌ای</h2><small dir="ltr">Mbps</small></div>
+        <dl className="stat-rates">
+          <div><dt>دریافت</dt><dd><strong dir="ltr">{status?.online ? mbps(status.rxRate) : '—'}</strong></dd></div>
+          <div><dt>ارسال</dt><dd><strong dir="ltr">{status?.online ? mbps(status.txRate) : '—'}</strong></dd></div>
+        </dl>
+      </article>
+      {stats.map(stat => <article className="card stat" key={stat.title}><h2>{stat.title}</h2>
+        <div><strong dir="ltr">{stat.value}</strong>{stat.unit && <> <small>{stat.unit}</small></>}</div>
+      </article>)}
+    </section>
     <RouteTopology status={status} config={cfg} light={light} openBackend={openBackend} />
     <section className="card chart-card"><div className="section-title"><div><h2>ترافیک تجمیعی</h2>
       <div className="legend"><span className="rx">دریافت</span><span className="tx">ارسال</span><span>مگابیت بر ثانیه</span></div></div>
@@ -125,7 +137,7 @@ function Overview({ status, cfg, light, openBackend }: {
       </select></div>
       {error ? <p role="alert">{error}</p> : <Chart points={points} label="نمودار نرخ دریافت و ارسال" light={light} />}
     </section>
-    {status?.decision && <section className="card decision"><h2>آخرین انتخاب مسیر</h2>
+    {status?.decision && <section className="card decision"><h2>{kernelTraffic ? 'آخرین انتخاب مسیر پشتیبان Go' : 'آخرین انتخاب مسیر'}</h2>
       <p>{backends.find(b => b.id === status.decision?.backend)?.name ?? status.decision.backend} · {strategies[status.decision.strategy]} · امتیاز <bdi dir="ltr">{fmt(status.decision.score)}</bdi>
         {status.decision.retry && ' · انتخاب دوباره پس از خطای اتصال'}</p></section>}
   </>;
@@ -137,7 +149,7 @@ type BackendFocus = { group: string; id: string };
 function Backends({ cfg, status, csrf, save, focus }: {
   cfg: Config; status: Status | null; csrf: string; save: Save; focus: BackendFocus | null;
 }) {
-  const [group, setGroup] = useState(focus?.group ?? cfg.groups[0].id);
+  const [group, setGroup] = useState(focus?.group ?? cfg.groups.find(item => item.backends?.length)?.id ?? cfg.groups[0].id);
   const [edit, setEdit] = useState<{ previous?: string; row: Backend } | null>(() => {
     const row = cfg.groups.find(item => item.id === focus?.group)?.backends?.find(item => item.id === focus?.id);
     return row ? { previous: row.id, row: { ...row } } : null;
@@ -169,7 +181,9 @@ function Backends({ cfg, status, csrf, save, focus }: {
   return <section className="card"><div className="section-title"><div><h2>ورودی‌های خصوصی</h2>
     <p className="muted">اتصال‌های باز هنگام تخلیه در مسیر فعلی ادامه پیدا می‌کنند.</p></div>
     <div className="actions"><select aria-label="گروه ورودی" value={selected.id} onChange={event => { setGroup(event.target.value); setEdit(null); }}>
-      {cfg.groups.map(item => <option key={item.id}>{item.id}</option>)}</select>
+      {cfg.groups.map(item => <option key={item.id} value={item.id}>
+        {[item.id, item.tcp && `TCP ${item.tcp.split(':').at(-1)}`, item.udp && `UDP ${item.udp.split(':').at(-1)}`].filter(Boolean).join(' · ')}
+      </option>)}</select>
       <button className="primary" onClick={() => setEdit({ row: { ...blankBackend } })}>افزودن ورودی</button></div></div>
     {message && <p className="notice" role="status">{message}</p>}
     {edit && <form className="editor" onSubmit={submit}><h3>{edit.previous ? 'ویرایش ورودی' : 'ورودی جدید'}</h3><div className="form-grid">
@@ -185,7 +199,7 @@ function Backends({ cfg, status, csrf, save, focus }: {
       <tbody>{selected.backends.map(row => {
         const b = live.get(row.id);
         return <tr key={row.id}><td><strong>{row.name}</strong><small dir="ltr">{row.tcp || row.udp}</small></td>
-          <td><StatusBadge state={b?.state} /><small>{row.probe ? 'آزمون سرتاسری' : 'آزمون پورت'}</small></td>
+          <td><RouteHealth metrics={b} /></td>
           <td><bdi dir="ltr">{fmt(b?.tcpActive)} / {fmt(b?.udpActive)}</bdi></td><td><bdi dir="ltr">{mbps(b?.rxRate)} / {mbps(b?.txRate)} Mbps</bdi></td>
           <td><bdi dir="ltr">{fmt(b?.rtt || null)} ms</bdi></td>
           <td><div className="actions"><button onClick={() => setEdit({ previous: row.id, row: { ...row } })}>ویرایش</button>

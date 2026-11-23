@@ -13,9 +13,10 @@ management and forwarding services independently.
 curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/backpack-smart-router/main/install-online.sh | bash
 ```
 
-The installer downloads the latest published release, checks the package SHA-256, and prints the default panel URL
-and, on a fresh install, the initial administrator credentials. The panel
-listens on the server's loopback interface by default.
+The online installer downloads the latest release and checks its SHA-256. Both
+installers print the public HTTPS panel address when its socket is active, or
+the default loopback address otherwise. A fresh install prints the initial
+administrator credentials. Upgrades keep the existing password.
 
 ```text
 v2rayNG → public router listener → selected private VM entrance → existing tunnel → egress
@@ -47,12 +48,41 @@ Backends see the router as the network-layer source.
 For deployments with a separate public ingress, set `VITE_PUBLIC_INGRESS` when
 building the UI to display its public address and port on the topology map.
 
-## Optional Linux kernel forwarding
+To forward an additional public TCP port to a single private backend while the
+engine stays online, use the [TCP relay setup](README.fa.md#هدایت-یک-پورت-عمومی-tcp-به-مقصد-خصوصی).
+To show that traffic in the dashboard, use the
+[migration to a measured engine listener](README.fa.md#انتقال-ورودی-tcp-به-موتور-برای-نمایش-آمار).
 
-The standard installer starts the Go proxy. A dedicated IPv4 router with a
-separate backend interface can also run the opt-in nftables forwarding and
-metrics services. See the [kernel forwarding setup](README.fa.md#ارسال-tcp-در-کرنل-لینوکس)
-for configuration, staged rollout, and rollback.
+## Linux data plane and Go control plane
+
+On a dedicated Linux IPv4 router, set up `/etc/backpack-router/kernel-forward.json`
+for the public interface, private interface and backend pool before installation.
+The installer wires the kernel forwarder and dashboard metrics automatically.
+With eligible backends, nftables forwards all new connections by default. Go
+manages configuration and health checks and can provide a fallback listener.
+The dedicated installation steps are in the [Persian setup guide](README.fa.md#موتور-اصلی-لینوکس-و-مسیر-پشتیبان-go).
+
+For a fresh install, provide the interface and backend addresses directly:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/backpack-smart-router/main/install-online.sh | bash -s -- \
+  --kernel --public-interface eth0 --public-ip 203.0.113.10 \
+  --private-interface eth1 --private-ip 10.0.0.2 --port 8443 \
+  --backend 10.0.0.11 --backend 10.0.0.12
+```
+
+Replace the example addresses and interfaces. Use `--backend-port` if the
+backends listen on a different port. The setup uses Python 3, iproute2, nftables
+and curl. Install `conntrack` to include kernel connection counts in the dashboard.
+For TLS forwarding, add `--tls-server-name tunnel.example.net` to require a
+verified TLS handshake before nftables sends new connections to a backend.
+Add `--tls-health-policy observe` to show TLS results in the dashboard while
+keeping TCP health checks in charge of routing. Set `--go-fallback-syn-rate`
+to limit new connections per second to the Go fallback. This limit does not
+apply to kernel-forwarded flows and reserves conntrack mark bit `0x20000000`.
+For an ingress that needs SYN admission limits, set both `--syn-rate` and
+`--syn-rate-per-ip` in connections per second. Keep the per-IP rate at or below
+the total. The generated rules reserve conntrack mark bit `0x10000000`.
 
 ## Management API
 

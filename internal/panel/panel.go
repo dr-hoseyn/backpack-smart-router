@@ -42,9 +42,10 @@ type panel struct {
 }
 
 type liveStatus struct {
-	Online        bool      `json:"online"`
-	At            time.Time `json:"at"`
-	KernelTraffic string    `json:"kernelTraffic,omitempty"`
+	Online            bool      `json:"online"`
+	At                time.Time `json:"at"`
+	KernelTraffic     string    `json:"kernelTraffic,omitempty"`
+	KernelConnections bool      `json:"kernelConnections,omitempty"`
 	router.Status
 }
 
@@ -161,14 +162,17 @@ func (p *panel) monitor(ctx context.Context) {
 		err := p.control(query, http.MethodGet, "/status", &status)
 		if err == nil {
 			var kernelTraffic string
+			var kernelConnections bool
 			if p.kernelMetrics != "" {
 				kernelTraffic = "unavailable"
 				if kernel.update(p.kernelMetrics, now) {
-					kernel.addTraffic(&status)
+					kernelConnections = kernel.addTraffic(&status)
 					kernelTraffic = "included"
 				}
 			}
-			p.status.Store(&liveStatus{Online: true, At: now, Status: status, KernelTraffic: kernelTraffic})
+			p.status.Store(&liveStatus{
+				Online: true, At: now, Status: status, KernelTraffic: kernelTraffic, KernelConnections: kernelConnections,
+			})
 			if err := p.reconcile(query, status.Revision); err != nil {
 				slog.Warn("configuration pending", "error", err)
 			}

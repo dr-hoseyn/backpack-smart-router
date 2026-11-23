@@ -22,10 +22,19 @@ function rate(b?: BackendStatus) {
   return b ? b.rxRate + b.txRate : undefined;
 }
 
+export function RouteHealth({ metrics }: { metrics?: BackendStatus }) {
+  if (metrics?.state === 'healthy') {
+    if (metrics.kernelTLS === false) return <span className="badge checking">TLS ناموفق</span>;
+    if (metrics.kernelTLS === true) return <span className="badge healthy">بررسی TLS موفق</span>;
+    return <span className="badge healthy">{metrics.verified ? 'آزمون سرتاسری موفق' : 'بررسی TCP موفق'}</span>;
+  }
+  return <StatusBadge state={metrics?.state} />;
+}
+
 function branchFor(route: Route, total: number): Branch {
   const state = route.metrics?.state;
   const speed = rate(route.metrics);
-  const signal: Signal = state === 'healthy' ? (speed ? 'flow' : 'idle')
+  const signal: Signal = state === 'healthy' ? (speed ? 'flow' : route.metrics?.kernelTLS === false ? 'warming' : 'idle')
     : state === 'unhealthy' ? 'down'
     : state === 'checking' || state === 'draining' ? 'warming' : 'quiet';
   return { id: route.backend.id, signal, share: speed !== undefined && total > 0 ? speed / total : undefined };
@@ -145,7 +154,7 @@ function MapNode({ route, branch, selected, onSelect }: {
   return <button type="button" className="map-node map-endpoint" data-map-endpoint={backend.id} data-signal={branch.signal}
     aria-pressed={selected} onClick={onSelect}>
     <span className="map-node-heading">
-      <strong title={backend.name}>{backend.name}</strong><StatusBadge state={metrics?.state} />
+      <strong title={backend.name}>{backend.name}</strong><RouteHealth metrics={metrics} />
     </span>
     <span className="map-node-address" dir="ltr">{backend.tcp || backend.udp}</span>
     <span className="map-node-stats">
@@ -157,7 +166,7 @@ function MapNode({ route, branch, selected, onSelect }: {
 }
 
 function RouterListeners({ config }: { config: Config | null }) {
-  const listeners = [...new Set(config?.groups.flatMap(group => [
+  const listeners = [...new Set(config?.groups.filter(group => group.backends?.length).flatMap(group => [
     group.tcp ? `TCP :${group.tcp.split(':').at(-1)}` : '',
     group.udp ? `UDP :${group.udp.split(':').at(-1)}` : '',
   ]).filter(Boolean))];
@@ -178,8 +187,9 @@ export function RouteTopology({ status, config, light, openBackend }: {
     ? (live.backends ?? []).map(b => ({ backend: b, group: b.group, metrics: b }))
     : (config?.groups ?? []).flatMap(g => (g.backends ?? []).map(b => ({ backend: b, group: g.id })));
   const total = routes.reduce((sum, route) => sum + (rate(route.metrics) ?? 0), 0);
+  const ingressRate = live ? total : undefined;
   const branches = routes.map(route => branchFor(route, total));
-  const ingress: Signal = live ? (live.rxRate + live.txRate > 0 ? 'flow' : 'idle') : 'quiet';
+  const ingress: Signal = live ? (total > 0 ? 'flow' : 'idle') : 'quiet';
   const selected = routes.find(route => route.backend.id === selection);
   const selectedBranch = branches.find(branch => branch.id === selection);
   function select(id: string) { setSelection(value => value === id ? null : id); }
@@ -188,7 +198,9 @@ export function RouteTopology({ status, config, light, openBackend }: {
     <div className="section-title topology-title">
       <div>
         <h2 id="topology-title">نقشهٔ مسیرهای ترافیک</h2>
-        <p className="muted">ضخامت خط سهم ترافیک را نشان می‌دهد. {live?.kernelTraffic ? 'شمار اتصال‌ها مربوط به Go است.' : 'برای جزئیات، یک مقصد را انتخاب کنید.'}</p>
+        {live?.kernelTraffic === 'included' && <p className="muted">
+          {live.kernelConnections ? 'آمار ترکیبی کرنل و Go' : 'ترافیک کرنل و Go · شمار اتصال‌های Go'}
+        </p>}
       </div>
       <div className="view-switch" role="group" aria-label="نمایش مسیرها">
         <button type="button" aria-pressed={view === 'map'} onClick={() => setView('map')}>نقشه</button>
@@ -200,12 +212,13 @@ export function RouteTopology({ status, config, light, openBackend }: {
       <div className="map-node map-source" data-map-source>
         <strong>ورودی ترافیک</strong>
         {publicIngress && <bdi className="map-node-address" dir="ltr">{publicIngress}</bdi>}
-        <bdi className="source-rate" dir="ltr">{formatRate(live ? live.rxRate + live.txRate : undefined)}</bdi>
+        <bdi className="source-rate" dir="ltr">{formatRate(ingressRate)}</bdi>
         <span className="map-node-meta"><bdi dir="ltr">{fmt(live?.active)}</bdi> اتصال و جریان فعال</span>
       </div>
       <div className="map-node map-router" data-map-router>
         <span className="router-name">موتور <bdi>Smart Router</bdi></span>
-        <strong>{live ? (live.kernelTraffic ? 'مسیریابی کرنل و Go' : (strategies[live.strategy] ?? live.strategy)) : 'وضعیت موتور در دسترس نیست'}</strong>
+        <strong>{live?.kernelTraffic === 'included' ? 'کرنل لینوکس / nftables'
+          : live ? (strategies[live.strategy] ?? live.strategy) : 'وضعیت موتور در دسترس نیست'}</strong>
         <RouterListeners config={config} />
       </div>
       <div className="map-endpoints">
@@ -220,7 +233,7 @@ export function RouteTopology({ status, config, light, openBackend }: {
           return <tr key={b.id}>
           <td><button type="button" className="route-name-button" aria-pressed={selection === b.id} onClick={() => select(b.id)}>{b.name}</button>
             <small dir="ltr">{b.tcp || b.udp}</small></td>
-          <td><StatusBadge state={metrics?.state} /></td>
+          <td><RouteHealth metrics={metrics} /></td>
           <td><bdi dir="ltr">{fmt(metrics?.active)}</bdi></td>
           <td><bdi dir="ltr">{formatRate(rate(metrics))}</bdi></td>
           <td><bdi dir="ltr">{percent(share === undefined ? undefined : share * 100)}</bdi></td>
@@ -235,7 +248,7 @@ export function RouteTopology({ status, config, light, openBackend }: {
     </ul>}
     {selected && <div className="route-inspector">
       <div className="section-title">
-        <div className="inspector-title"><h3>جزئیات {selected.backend.name}</h3><StatusBadge state={selected.metrics?.state} /></div>
+        <div className="inspector-title"><h3>جزئیات {selected.backend.name}</h3><RouteHealth metrics={selected.metrics} /></div>
         <div className="actions">
           {config?.groups.some(group => group.id === selected.group && group.backends?.some(b => b.id === selected.backend.id)) &&
             <button type="button" onClick={() => openBackend(selected.group, selected.backend.id)}>مدیریت ورودی</button>}

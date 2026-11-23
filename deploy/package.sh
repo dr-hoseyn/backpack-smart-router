@@ -13,6 +13,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w -X main
 install -m 0755 install.sh "$work/$name/"
 install -m 0755 deploy/uninstall.sh "$work/$name/deploy/"
 install -m 0755 deploy/kernel-forward.py "$work/$name/deploy/"
+install -m 0644 deploy/kernel-setup.py "$work/$name/deploy/"
 install -m 0644 deploy/*.service deploy/*.example deploy/engine.example.json "$work/$name/deploy/"
 install -m 0644 README.md README.fa.md "$work/$name/"
 cp -R ui/dist/. "$work/$name/ui/"

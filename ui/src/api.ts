@@ -3,6 +3,7 @@ export type Backend = {
   weight: number; capacity: number; rateMbps: number; enabled: boolean; drain: boolean;
 };
 export type BackendStatus = Backend & {
+  kernelTLS?: boolean;
   group: string; state: string; healthScore: number; active: number; tcpActive: number; udpActive: number;
   rx: number; tx: number; rxRate: number; txRate: number; rtt: number; lastOK: string; failure: string;
   cpu: number | null; ram: number | null; loss: number | null; retransmits: number | null;
@@ -17,6 +18,7 @@ export type Config = {
 };
 export type Status = {
   kernelTraffic?: 'included' | 'unavailable';
+  kernelConnections?: boolean;
   online: boolean; at: string; revision: number; strategy: string; active: number; rejected: number;
   rx: number; tx: number; rxRate: number; txRate: number; backends: BackendStatus[] | null;
   decision: { time: string; group: string; backend: string; protocol: string; strategy: string; score: number; retry: boolean } | null;
