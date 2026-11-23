@@ -83,6 +83,53 @@ jobs:
           curl --fail --noproxy '*' http://127.0.0.2:8443/check.txt | cmp - "$smoke/check.txt"
           relay_pid=$(systemctl show "$relay.service" --property=MainPID --value)
           grep -Eq '^Max open files +32768 +32768' "/proc/$relay_pid/limits"
+      - name: Verify the dashboard counters for public TCP ingress
+        run: |
+          smoke=$(mktemp -d)
+          archive=(bin/*-amd64.tar.gz)
+          tar -xzf "${archive[0]}" -C "$smoke"
+          package=("$smoke"/backpack-smart-router-*)
+          backend=
+          engine=
+          cleanup() {
+            sudo nft delete table ip backpack_router_native_tcp || true
+            sudo ip netns del backpack-client || true
+            sudo ip link del backpack-wan || true
+            sudo ip addr del 10.0.0.2/32 dev lo || true
+            if [[ -n $engine ]]; then kill "$engine" || true; wait "$engine" || true; fi
+            if [[ -n $backend ]]; then kill "$backend" || true; wait "$backend" || true; fi
+            rm -rf -- "$smoke"
+          }
+          trap cleanup EXIT
+          sudo ip netns add backpack-client
+          sudo ip link add backpack-wan type veth peer name client-wan netns backpack-client
+          sudo ip addr add 203.0.113.10/24 dev backpack-wan
+          sudo ip link set backpack-wan up
+          sudo ip -n backpack-client addr add 203.0.113.11/24 dev client-wan
+          sudo ip -n backpack-client link set client-wan up
+          sudo ip -n backpack-client route add 10.0.0.2 via 203.0.113.10
+          sudo ip addr add 10.0.0.2/32 dev lo
+          sed 's/"eth0"/"backpack-wan"/' "${package[0]}/deploy/native-tcp-ingress.nft.example" > "$smoke/ingress.nft"
+          sudo nft -c -f "$smoke/ingress.nft"
+          printf 'BackPack measured TCP ingress\n' > "$smoke/check.txt"
+          python3 -m http.server 8443 --bind 127.0.0.1 --directory "$smoke" &
+          backend=$!
+          jq '.groups = [{id:"vless-8443",tcp:"10.0.0.2:8443",backends:[{id:"measured",name:"Measured backend",tcp:"127.0.0.1:8443",weight:1,enabled:true}]}]
+              | .checkIntervalMS = 500 | .recoveries = 1' "${package[0]}/deploy/engine.example.json" > "$smoke/engine.json"
+          "${package[0]}/backpack-router" engine -config "$smoke/engine.json" -socket "$smoke/control.sock" &
+          engine=$!
+          for ((attempt=0; attempt<15; attempt++)); do
+            if curl -fsS --unix-socket "$smoke/control.sock" http://router/status 2>/dev/null |
+               jq -e '.backends[] | select(.id == "measured" and .state == "healthy")' >/dev/null; then break; fi
+            sleep 1
+          done
+          sudo nft -f "$smoke/ingress.nft"
+          sudo ip netns exec backpack-client curl --fail --max-time 5 --noproxy '*' http://203.0.113.10:8443/check.txt | cmp - "$smoke/check.txt"
+          curl -fsS --unix-socket "$smoke/control.sock" http://router/status |
+            jq -e '.backends[] | select(.id == "measured" and .rx > 0 and .tx > 0)' >/dev/null
+          if sudo ip netns exec backpack-client curl --fail --max-time 1 --noproxy '*' http://10.0.0.2:8443/check.txt; then
+            exit 1
+          fi
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: linux-packages

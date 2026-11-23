@@ -1,0 +1,14 @@
+[Unit]
+Description=BackPack Smart Router public TCP ingress to the measured engine listener
+After=network-online.target nftables.service backpack-router-engine.service
+Wants=network-online.target backpack-router-engine.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/usr/sbin/nft -c -f /etc/backpack-router/native-tcp-ingress.nft
+ExecStart=/usr/sbin/nft -f /etc/backpack-router/native-tcp-ingress.nft
+ExecStop=-/usr/sbin/nft delete table ip backpack_router_native_tcp
+
+[Install]
+WantedBy=multi-user.target

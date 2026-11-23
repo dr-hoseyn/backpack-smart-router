@@ -49,6 +49,8 @@ building the UI to display its public address and port on the topology map.
 
 To forward an additional public TCP port to a single private backend while the
 engine stays online, use the [TCP relay setup](README.fa.md#هدایت-یک-پورت-عمومی-tcp-به-مقصد-خصوصی).
+To show that traffic in the dashboard, use the
+[migration to a measured engine listener](README.fa.md#انتقال-ورودی-tcp-به-موتور-برای-نمایش-آمار).
 
 ## Optional Linux kernel forwarding
 
