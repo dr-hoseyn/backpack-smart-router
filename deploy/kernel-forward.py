@@ -127,10 +127,14 @@ def dispatch_rules(cfg, share=0, weights=None, test=False):
     return rules
 
 
-def traffic_counters(cfg):
+def counter_snapshot():
     objects = json.loads(nft("-j", "list", "counters", "table", "ip", TABLE))["nftables"]
-    counts = {obj["counter"]["name"]: obj["counter"]["bytes"] for obj in objects if "counter" in obj}
-    return {ip: (counts[f"backend_{index}_in"], counts[f"backend_{index}_out"])
+    return {obj["counter"]["name"]: obj["counter"] for obj in objects if "counter" in obj}
+
+
+def traffic_counters(cfg):
+    counts = counter_snapshot()
+    return {ip: (counts[f"backend_{index}_in"]["bytes"], counts[f"backend_{index}_out"]["bytes"])
             for index, ip in enumerate(cfg["backends"])}
 
 
@@ -152,15 +156,62 @@ def publish(cfg, path):
         time.sleep(2)
 
 
-def healthy_backends(cfg):
+def proxy_status(cfg):
     result = subprocess.run(
         ["curl", "-fsS", "--max-time", "3", "--unix-socket", cfg["health_socket"],
          "http://localhost/status"], text=True, capture_output=True, check=True, timeout=4,
     )
+    return json.loads(result.stdout)
+
+
+def healthy_backends(cfg):
     addresses = {f"{ip}:443": ip for ip in cfg["backends"]}
-    return {addresses[backend["tcp"]]: backend for backend in json.loads(result.stdout)["backends"]
+    return {addresses[backend["tcp"]]: backend for backend in proxy_status(cfg)["backends"]
             if backend["tcp"] in addresses and backend["state"] == "healthy"
             and backend["enabled"] and not backend["drain"]}
+
+
+def measure(cfg, seconds):
+    def sample():
+        cpu = Path("/proc/stat").read_text().splitlines()[0].split()[1:9]
+        conntrack = int(Path("/proc/sys/net/netfilter/nf_conntrack_count").read_text())
+        return time.monotonic(), list(map(int, cpu)), conntrack, counter_snapshot(), proxy_status(cfg)
+
+    before, cpu_before, ct_before, counters_before, go_before = sample()
+    time.sleep(seconds)
+    after, cpu_after, ct_after, counters_after, go_after = sample()
+    elapsed = after - before
+
+    def delta(name, field):
+        change = counters_after[name][field] - counters_before[name][field]
+        if change < 0:
+            raise ValueError("kernel counters reset during measurement")
+        return change
+
+    def mbps(byte_count):
+        return round(8 * byte_count / elapsed / 1e6, 2)
+
+    cpu_delta = [new - old for old, new in zip(cpu_before, cpu_after)]
+    total = sum(cpu_delta)
+    backends = []
+    for index, ip in enumerate(cfg["backends"]):
+        prefix = f"backend_{index}_"
+        backends.append({"address": ip, "new": delta(prefix + "new", "packets"),
+                         "rx_mbps": mbps(delta(prefix + "in", "bytes")),
+                         "tx_mbps": mbps(delta(prefix + "out", "bytes"))})
+    if go_after["started"] != go_before["started"]:
+        raise ValueError("Go proxy restarted during measurement")
+    result = {
+        "sample_seconds": round(elapsed, 2),
+        "cpu_busy_percent": round(100 * sum(cpu_delta[i] for i in (0, 1, 2, 5, 6)) / total, 2),
+        "cpu_softirq_percent": round(100 * cpu_delta[6] / total, 2),
+        "conntrack_entries": [ct_before, ct_after],
+        "kernel_backends": backends,
+        "go": {"active": go_after["active"], "rejected": go_after["rejected"] - go_before["rejected"],
+               "rx_mbps": mbps(go_after["rx"] - go_before["rx"]),
+               "tx_mbps": mbps(go_after["tx"] - go_before["tx"])},
+    }
+    print(json.dumps(result, indent=2))
 
 
 def run(cfg, share_file):
@@ -203,9 +254,10 @@ def run(cfg, share_file):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config")
-    parser.add_argument("command", choices=["init", "tune", "test", "disable", "run", "counters", "publish"])
+    parser.add_argument("command", choices=["init", "tune", "test", "disable", "run", "counters", "publish", "measure"])
     parser.add_argument("--share-file", default="/etc/backpack-router/kernel-forward.share")
     parser.add_argument("--metrics-file", default="/run/backpack-router-kernel/traffic.json")
+    parser.add_argument("--seconds", type=int, default=15)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = config(args.config)
@@ -213,6 +265,10 @@ def main():
         apply(dispatch_rules(cfg))
     elif args.command == "publish":
         publish(cfg, args.metrics_file)
+    elif args.command == "measure":
+        if not 1 <= args.seconds <= 300:
+            parser.error("--seconds must be between 1 and 300")
+        measure(cfg, args.seconds)
     else:
         initialize(cfg)
         if args.command == "tune":

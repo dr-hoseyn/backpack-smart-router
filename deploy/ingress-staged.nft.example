@@ -1,0 +1,11 @@
+table ip backpack_router_ingress {
+    chain redirect_to_go {
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "eth0" ip daddr 203.0.113.10 tcp dport { 443, 14443 } tcp flags syn / fin,syn,rst,ack redirect to :14444
+    }
+
+    chain protect_go_listener {
+        type filter hook input priority filter; policy accept;
+        iifname "eth0" ip daddr 203.0.113.10 tcp dport 14444 ct original proto-dst 14444 drop
+    }
+}

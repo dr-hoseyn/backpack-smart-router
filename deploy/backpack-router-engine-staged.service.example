@@ -1,0 +1,25 @@
+[Unit]
+Description=BackPack Smart Router staged data plane
+After=network.target
+
+[Service]
+User=backpack-engine
+Group=backpack-router
+RuntimeDirectory=backpack-router-staged
+RuntimeDirectoryMode=0750
+UMask=0027
+ExecStart=/opt/backpack-router/current/backpack-router engine -config /var/lib/backpack-router/config/engine-staged.json -socket /run/backpack-router-staged/control.sock
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+LimitNOFILE=524288
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target
