@@ -130,6 +130,52 @@ jobs:
           if sudo ip netns exec backpack-client curl --fail --max-time 1 --noproxy '*' http://10.0.0.2:8443/check.txt; then
             exit 1
           fi
+      - name: Verify primary Linux kernel forwarding on port 8443
+        run: |
+          smoke=$(mktemp -d)
+          archive=(bin/*-amd64.tar.gz)
+          tar -xzf "${archive[0]}" -C "$smoke"
+          package=("$smoke"/backpack-smart-router-*)
+          script="${package[0]}/deploy/kernel-forward.py"
+          cleanup() {
+            for namespace in bp-router bp-client bp-backend; do
+              sudo ip netns pids "$namespace" | xargs -r sudo kill || true
+              sudo ip netns del "$namespace" || true
+            done
+            rm -rf -- "$smoke"
+          }
+          trap cleanup EXIT
+          for namespace in bp-router bp-client bp-backend; do sudo ip netns add "$namespace"; done
+          sudo ip -n bp-router link add wan type veth peer name eth0 netns bp-client
+          sudo ip -n bp-router link add lan type veth peer name eth0 netns bp-backend
+          while read -r namespace interface address; do
+            sudo ip -n "$namespace" addr add "$address" dev "$interface"
+            sudo ip -n "$namespace" link set "$interface" up
+          done <<'ENDPOINTS'
+          bp-router wan 203.0.113.10/24
+          bp-router lan 10.0.0.2/24
+          bp-client eth0 203.0.113.11/24
+          bp-backend eth0 10.0.0.11/24
+          ENDPOINTS
+          sudo ip -n bp-router link set lo up
+          printf 'BackPack kernel data plane\n' > "$smoke/check.txt"
+          sudo ip netns exec bp-backend python3 -m http.server 8443 --bind 10.0.0.11 --directory "$smoke" &
+          jq '.groups = [{id:"vless-8443",tcp:"10.0.0.2:18443",backends:[{id:"measured",name:"Measured backend",tcp:"10.0.0.11:8443",weight:1,enabled:true}]}]
+              | .checkIntervalMS = 500 | .recoveries = 1' "${package[0]}/deploy/engine.example.json" > "$smoke/engine.json"
+          sudo ip netns exec bp-router "${package[0]}/backpack-router" engine -config "$smoke/engine.json" -socket "$smoke/control.sock" &
+          jq --arg sock "$smoke/control.sock" '.public_if="wan" | .backend_if="lan" | .source_ip="10.0.0.2"
+              | .public_ports=[8443] | .backend_port=8443 | .test_ports=[] | .backends=["10.0.0.11"]
+              | .control_group="vless-8443" | .health_socket=$sock' "${package[0]}/deploy/kernel-forward.example" > "$smoke/kernel.json"
+          sudo ip netns exec bp-router "$script" "$smoke/kernel.json" init
+          sudo ip netns exec bp-router sysctl -w net.ipv4.ip_forward=1
+          sudo ip netns exec bp-router "$script" "$smoke/kernel.json" run --share-file "$smoke/no-share-override" &
+          for ((attempt=0; attempt<15; attempt++)); do
+            if sudo ip netns exec bp-router nft list chain ip backpack_router_kernel dispatch | grep -q '0-999 : jump'; then break; fi
+            sleep 1
+          done
+          sudo ip netns exec bp-client curl -fsS --max-time 5 --noproxy '*' http://203.0.113.10:8443/check.txt | cmp - "$smoke/check.txt"
+          sudo ip netns exec bp-router "$script" "$smoke/kernel.json" counters | jq -e '.["10.0.0.11"] > 0'
+          sudo curl -fsS --unix-socket "$smoke/control.sock" http://router/status | jq -e '.rx == 0 and .tx == 0'
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: linux-packages

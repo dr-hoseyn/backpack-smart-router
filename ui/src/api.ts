@@ -17,6 +17,7 @@ export type Config = {
 };
 export type Status = {
   kernelTraffic?: 'included' | 'unavailable';
+  kernelConnections?: boolean;
   online: boolean; at: string; revision: number; strategy: string; active: number; rejected: number;
   rx: number; tx: number; rxRate: number; txRate: number; backends: BackendStatus[] | null;
   decision: { time: string; group: string; backend: string; protocol: string; strategy: string; score: number; retry: boolean } | null;

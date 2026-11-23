@@ -6,6 +6,7 @@ import ipaddress
 import json
 import logging
 import re
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -34,23 +35,26 @@ def config(path):
         if not re.fullmatch(r"[\w.-]{1,15}", cfg[key], re.ASCII):
             raise ValueError(f"invalid interface {key}")
     cfg["backends"] = [str(ipaddress.IPv4Address(ip)) for ip in cfg["backends"]]
+    cfg.setdefault("backend_port", 443)
+    cfg.setdefault("test_ports", [])
     ports = cfg["public_ports"] + cfg["test_ports"]
     if (len(cfg["backends"]) != len(set(cfg["backends"])) or
-            len(cfg["backends"]) != len(cfg["test_ports"]) or not cfg["backends"] or
+            (cfg["test_ports"] and len(cfg["backends"]) != len(cfg["test_ports"])) or not cfg["backends"] or
             not cfg["public_ports"] or len(ports) != len(set(ports)) or
-            any(type(port) is not int or not 1 <= port <= 65535 for port in ports)):
+            any(type(port) is not int or not 1 <= port <= 65535 for port in [*ports, cfg["backend_port"]])):
         raise ValueError("invalid backend or port configuration")
     return cfg
 
 
 def forward_rules(cfg):
     wan, lan = json.dumps(cfg["public_if"]), json.dumps(cfg["backend_if"])
+    backend_port = cfg["backend_port"]
     ports = "{ " + ", ".join(map(str, cfg["public_ports"] + cfg["test_ports"])) + " }"
     scope = f"ct status dnat ct original ip daddr {cfg['public_ip']} ct original proto-dst {ports}"
     rules = [f"flush chain ip {TABLE} forward"]
     for direction, match, address in (
-        ("in", f"iifname {wan} oifname {lan} tcp dport 443", "daddr"),
-        ("out", f"iifname {lan} oifname {wan} tcp sport 443 ct state established", "saddr"),
+        ("in", f"iifname {wan} oifname {lan} tcp dport {backend_port}", "daddr"),
+        ("out", f"iifname {lan} oifname {wan} tcp sport {backend_port} ct state established", "saddr"),
     ):
         entries = []
         for index, ip in enumerate(cfg["backends"]):
@@ -74,6 +78,7 @@ def initialize(cfg):
     if TABLE in [line.split()[-1] for line in nft("list", "tables", "ip").splitlines() if line]:
         return
     public, source = cfg["public_ip"], cfg["source_ip"]
+    backend_port = cfg["backend_port"]
     wan, lan = json.dumps(cfg["public_if"]), json.dumps(cfg["backend_if"])
     backends = "{ " + ", ".join(cfg["backends"]) + " }"
     ports = "{ " + ", ".join(map(str, cfg["public_ports"] + cfg["test_ports"])) + " }"
@@ -87,14 +92,14 @@ def initialize(cfg):
         f"add rule ip {TABLE} prerouting iifname {wan} ip daddr {public} "
         f"tcp dport {ports} tcp flags syn / fin,syn,rst,ack jump dispatch",
         f"add rule ip {TABLE} postrouting iifname {wan} oifname {lan} "
-        f"{scope} ip daddr {backends} tcp dport 443 snat to {source}",
+        f"{scope} ip daddr {backends} tcp dport {backend_port} snat to {source}",
     ]
     for index, ip in enumerate(cfg["backends"]):
         rules += [
             f"add chain ip {TABLE} backend_{index}",
             f"add counter ip {TABLE} backend_{index}_new",
             f"add rule ip {TABLE} backend_{index} meta l4proto tcp "
-            f"counter name backend_{index}_new dnat to {ip}:443",
+            f"counter name backend_{index}_new dnat to {ip}:{backend_port}",
         ]
         for direction in ("in", "out"):
             rules.append(f"add counter ip {TABLE} backend_{index}_{direction}")
@@ -107,7 +112,7 @@ def dispatch_rules(cfg, share=0, weights=None, test=False):
     rules = [f"flush chain ip {TABLE} dispatch"]
     if test:
         for port, ip in zip(cfg["test_ports"], cfg["backends"]):
-            rules.append(f"add rule ip {TABLE} dispatch tcp dport {port} counter dnat to {ip}:443")
+            rules.append(f"add rule ip {TABLE} dispatch tcp dport {port} counter dnat to {ip}:{cfg['backend_port']}")
     if share and weights:
         ports = "{ " + ", ".join(map(str, cfg["public_ports"])) + " }"
         entries = []
@@ -142,12 +147,38 @@ def counters(cfg):
     return {ip: sum(directions) for ip, directions in traffic_counters(cfg).items()}
 
 
+def active_connections(cfg):
+    command = shutil.which("conntrack")
+    if command is None:
+        return {}
+    result = subprocess.run(
+        [command, "-L", "-f", "ipv4", "-p", "tcp", "--state", "ESTABLISHED",
+         "--orig-dst", cfg["public_ip"], "--reply-dst", cfg["source_ip"]],
+        text=True, capture_output=True, check=True, timeout=5,
+    )
+    active = dict.fromkeys(cfg["backends"], 0)
+    ports = set(cfg["public_ports"] + cfg["test_ports"])
+    for line in result.stdout.splitlines():
+        sources = re.findall(r"\bsrc=([\d.]+)", line)
+        destination = re.search(r"\bdport=(\d+)", line)
+        if len(sources) == 2 and sources[1] in active and destination and int(destination[1]) in ports:
+            active[sources[1]] += 1
+    return active
+
+
 def publish(cfg, path):
     output = Path(path)
     pending = output.with_suffix(".tmp")
     while True:
+        try:
+            active = active_connections(cfg)
+        except (OSError, subprocess.SubprocessError) as error:
+            logging.warning("kernel connection count unavailable: %s", error)
+            active = {}
         snapshot = {
-            "backends": {f"{ip}:443": {"rx": rx, "tx": tx}
+            "group": cfg.get("control_group", ""),
+            "backends": {f"{ip}:{cfg['backend_port']}": {"rx": rx, "tx": tx,
+                          **({"active": active[ip]} if ip in active else {})}
                          for ip, (rx, tx) in traffic_counters(cfg).items()},
         }
         pending.write_text(json.dumps(snapshot), encoding="utf-8")
@@ -165,9 +196,10 @@ def proxy_status(cfg):
 
 
 def healthy_backends(cfg):
-    addresses = {f"{ip}:443": ip for ip in cfg["backends"]}
+    addresses = {f"{ip}:{cfg['backend_port']}": ip for ip in cfg["backends"]}
     return {addresses[backend["tcp"]]: backend for backend in proxy_status(cfg)["backends"]
             if backend["tcp"] in addresses and backend["state"] == "healthy"
+            and (not cfg.get("control_group") or backend["group"] == cfg["control_group"])
             and backend["enabled"] and not backend["drain"]}
 
 
@@ -222,7 +254,10 @@ def run(cfg, share_file):
     fallback = dispatch_rules(cfg)
     while True:
         try:
-            share = int(Path(share_file).read_text().strip())
+            try:
+                share = int(Path(share_file).read_text().strip())
+            except FileNotFoundError:
+                share = SLOTS
             if not 0 <= share <= SLOTS:
                 raise ValueError("traffic share must be between 0 and 1000")
             health = healthy_backends(cfg)
@@ -254,13 +289,15 @@ def run(cfg, share_file):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("config")
-    parser.add_argument("command", choices=["init", "tune", "test", "disable", "run", "counters", "publish", "measure"])
+    parser.add_argument("command", choices=["check", "init", "tune", "test", "disable", "run", "counters", "publish", "measure"])
     parser.add_argument("--share-file", default="/etc/backpack-router/kernel-forward.share")
     parser.add_argument("--metrics-file", default="/run/backpack-router-kernel/traffic.json")
     parser.add_argument("--seconds", type=int, default=15)
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = config(args.config)
+    if args.command == "check":
+        return
     if args.command == "disable":
         apply(dispatch_rules(cfg))
     elif args.command == "publish":

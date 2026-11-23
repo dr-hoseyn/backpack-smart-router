@@ -44,4 +44,16 @@ func TestKernelTrafficMergesFreshCounters(t *testing.T) {
 	if sampler.update(path, now.Add(9*time.Second)) {
 		t.Fatal("stale sample should be unavailable")
 	}
+	write(now.Add(2*time.Second), `{"group":"vless","backends":{"192.0.2.2:443":{"rx":1700,"tx":2800,"active":9}}}`)
+	if !sampler.update(path, now.Add(2*time.Second)) {
+		t.Fatal("updated kernel sample should be available")
+	}
+	status = router.Status{Active: 2, Backends: []router.BackendStatus{
+		{Backend: router.Backend{TCP: addr}, Group: "vless", Active: 2, TCPActive: 2},
+		{Backend: router.Backend{TCP: addr}, Group: "other"},
+	}}
+	if !sampler.addTraffic(&status) || status.Active != 11 || status.Backends[0].TCPActive != 11 ||
+		status.Backends[1].Active != 0 || status.Backends[1].RX != 0 {
+		t.Fatalf("kernel connections or traffic attributed to the wrong group: %+v", status)
+	}
 }

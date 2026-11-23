@@ -137,7 +137,7 @@ type BackendFocus = { group: string; id: string };
 function Backends({ cfg, status, csrf, save, focus }: {
   cfg: Config; status: Status | null; csrf: string; save: Save; focus: BackendFocus | null;
 }) {
-  const [group, setGroup] = useState(focus?.group ?? cfg.groups[0].id);
+  const [group, setGroup] = useState(focus?.group ?? cfg.groups.find(item => item.backends?.length)?.id ?? cfg.groups[0].id);
   const [edit, setEdit] = useState<{ previous?: string; row: Backend } | null>(() => {
     const row = cfg.groups.find(item => item.id === focus?.group)?.backends?.find(item => item.id === focus?.id);
     return row ? { previous: row.id, row: { ...row } } : null;
@@ -169,7 +169,9 @@ function Backends({ cfg, status, csrf, save, focus }: {
   return <section className="card"><div className="section-title"><div><h2>ورودی‌های خصوصی</h2>
     <p className="muted">اتصال‌های باز هنگام تخلیه در مسیر فعلی ادامه پیدا می‌کنند.</p></div>
     <div className="actions"><select aria-label="گروه ورودی" value={selected.id} onChange={event => { setGroup(event.target.value); setEdit(null); }}>
-      {cfg.groups.map(item => <option key={item.id}>{item.id}</option>)}</select>
+      {cfg.groups.map(item => <option key={item.id} value={item.id}>
+        {[item.id, item.tcp && `TCP ${item.tcp.split(':').at(-1)}`, item.udp && `UDP ${item.udp.split(':').at(-1)}`].filter(Boolean).join(' · ')}
+      </option>)}</select>
       <button className="primary" onClick={() => setEdit({ row: { ...blankBackend } })}>افزودن ورودی</button></div></div>
     {message && <p className="notice" role="status">{message}</p>}
     {edit && <form className="editor" onSubmit={submit}><h3>{edit.previous ? 'ویرایش ورودی' : 'ورودی جدید'}</h3><div className="form-grid">

@@ -74,6 +74,16 @@ else
   fi
   install -m 0644 "$base/deploy/backpack-router-engine.service" "$base/deploy/backpack-router-panel.service" "$units/"
   services=(backpack-router-engine.service backpack-router-panel.service)
+  if [[ -f $etc/kernel-forward.json ]]; then
+    for tool in python3 nft curl; do
+      command -v "$tool" >/dev/null || { printf 'Kernel forwarding requires %s.\n' "$tool" >&2; exit 1; }
+    done
+    python3 "$base/deploy/kernel-forward.py" "$etc/kernel-forward.json" check
+    install -D -m 0755 "$base/deploy/kernel-forward.py" "$root/kernel-forward/kernel-forward.py"
+    install -m 0644 "$base/deploy/backpack-router-kernel-forward.service" "$base/deploy/backpack-router-kernel-metrics.service" "$units/"
+    printf 'BACKPACK_ROUTER_KERNEL_METRICS=/run/backpack-router-kernel/traffic.json\n' > "$etc/kernel-metrics.env"
+    services+=(backpack-router-kernel-forward.service backpack-router-kernel-metrics.service)
+  fi
 fi
 
 switch_release "$release"

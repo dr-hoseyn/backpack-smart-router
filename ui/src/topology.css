@@ -1,7 +1,7 @@
 .topology-card {
   container: topology / inline-size;
   --map-bg: #101b20;
-  --map-dots: #304147;
+  --map-dots: #26363e;
   --map-node: #162429;
   --map-router: #192c38;
   --map-router-line: #466b87;
@@ -58,7 +58,7 @@
   grid-template-columns: minmax(8rem, .8fr) minmax(10rem, 1fr) minmax(14rem, 1.5fr);
   align-items: center;
   gap: clamp(2.4rem, 6cqi, 5.5rem);
-  min-block-size: 18rem;
+  min-block-size: 15rem;
   margin-block-start: .95rem;
   padding: clamp(.8rem, 3cqi, 1.6rem);
   border: 1px solid var(--line);
@@ -120,11 +120,12 @@
   gap: .35rem .55rem;
 }
 .map-node-heading strong {
+  min-inline-size: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.map-endpoint .badge { font-size: .73rem; }
+.map-endpoint .badge { flex-shrink: 0; font-size: .73rem; }
 .map-node-address {
   overflow-wrap: anywhere;
   justify-self: start;

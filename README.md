@@ -52,12 +52,14 @@ engine stays online, use the [TCP relay setup](README.fa.md#هدایت-یک-پو
 To show that traffic in the dashboard, use the
 [migration to a measured engine listener](README.fa.md#انتقال-ورودی-tcp-به-موتور-برای-نمایش-آمار).
 
-## Optional Linux kernel forwarding
+## Linux data plane and Go control plane
 
-The standard installer starts the Go proxy. A dedicated IPv4 router with a
-separate backend interface can also run the opt-in nftables forwarding and
-metrics services. See the [kernel forwarding setup](README.fa.md#ارسال-tcp-در-کرنل-لینوکس)
-for configuration, staged rollout, and rollback.
+On a dedicated Linux IPv4 router, set up `/etc/backpack-router/kernel-forward.json`
+for the public interface, private interface and backend pool before installation.
+The installer wires the kernel forwarder and dashboard metrics automatically.
+With eligible backends, nftables forwards all new connections by default. Go
+manages configuration and health checks and can provide a fallback listener.
+The dedicated installation steps are in the [Persian setup guide](README.fa.md#موتور-اصلی-لینوکس-و-مسیر-پشتیبان-go).
 
 ## Management API
 

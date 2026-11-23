@@ -1,8 +1,7 @@
 [Unit]
 Description=BackPack Smart Router kernel TCP forwarding
-After=network-online.target nftables.service backpack-router-ingress-redirect.service
-Requires=backpack-router-ingress-redirect.service
-Wants=network-online.target
+After=network-online.target nftables.service backpack-router-engine.service
+Wants=network-online.target backpack-router-engine.service
 
 [Service]
 Type=simple
