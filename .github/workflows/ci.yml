@@ -81,6 +81,8 @@ jobs:
           sudo systemctl daemon-reload
           sudo systemctl start "$relay.socket"
           curl --fail --noproxy '*' http://127.0.0.2:8443/check.txt | cmp - "$smoke/check.txt"
+          relay_pid=$(systemctl show "$relay.service" --property=MainPID --value)
+          grep -Eq '^Max open files +32768 +32768' "/proc/$relay_pid/limits"
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: linux-packages
