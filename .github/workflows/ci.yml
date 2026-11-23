@@ -160,12 +160,13 @@ jobs:
           sudo ip -n bp-router link set lo up
           printf 'BackPack kernel data plane\n' > "$smoke/check.txt"
           sudo ip netns exec bp-backend python3 -m http.server 8443 --bind 10.0.0.11 --directory "$smoke" &
-          jq '.groups = [{id:"vless-8443",tcp:"10.0.0.2:18443",backends:[{id:"measured",name:"Measured backend",tcp:"10.0.0.11:8443",weight:1,enabled:true}]}]
-              | .checkIntervalMS = 500 | .recoveries = 1' "${package[0]}/deploy/engine.example.json" > "$smoke/engine.json"
-          sudo ip netns exec bp-router "${package[0]}/backpack-router" engine -config "$smoke/engine.json" -socket "$smoke/control.sock" &
-          jq --arg sock "$smoke/control.sock" '.public_if="wan" | .backend_if="lan" | .source_ip="10.0.0.2"
-              | .public_ports=[8443] | .backend_port=8443 | .test_ports=[] | .backends=["10.0.0.11"]
-              | .control_group="vless-8443" | .health_socket=$sock' "${package[0]}/deploy/kernel-forward.example" > "$smoke/kernel.json"
+          sudo ip netns exec bp-router python3 "${package[0]}/deploy/kernel-setup.py" "$smoke" \
+            --public-interface wan --public-ip 203.0.113.10 --private-interface lan --private-ip 10.0.0.2 \
+            --port 8443 --backend 10.0.0.11
+          sudo ip netns exec bp-router nft -c -f "$smoke/native-tcp-ingress.nft"
+          jq '.checkIntervalMS = 500 | .recoveries = 1' "$smoke/engine.json" > "$smoke/test-engine.json"
+          sudo ip netns exec bp-router "${package[0]}/backpack-router" engine -config "$smoke/test-engine.json" -socket "$smoke/control.sock" &
+          jq --arg sock "$smoke/control.sock" '.health_socket=$sock' "$smoke/kernel-forward.json" > "$smoke/kernel.json"
           sudo ip netns exec bp-router "$script" "$smoke/kernel.json" init
           sudo ip netns exec bp-router sysctl -w net.ipv4.ip_forward=1
           sudo ip netns exec bp-router "$script" "$smoke/kernel.json" run --share-file "$smoke/no-share-override" &

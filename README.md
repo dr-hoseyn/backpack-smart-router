@@ -13,9 +13,10 @@ management and forwarding services independently.
 curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/backpack-smart-router/main/install-online.sh | bash
 ```
 
-The installer downloads the latest published release, checks the package SHA-256, and prints the default panel URL
-and, on a fresh install, the initial administrator credentials. The panel
-listens on the server's loopback interface by default.
+The online installer downloads the latest release and checks its SHA-256. Both
+installers print the public HTTPS panel address when its socket is active, or
+the default loopback address otherwise. A fresh install prints the initial
+administrator credentials. Upgrades keep the existing password.
 
 ```text
 v2rayNG → public router listener → selected private VM entrance → existing tunnel → egress
@@ -60,6 +61,19 @@ The installer wires the kernel forwarder and dashboard metrics automatically.
 With eligible backends, nftables forwards all new connections by default. Go
 manages configuration and health checks and can provide a fallback listener.
 The dedicated installation steps are in the [Persian setup guide](README.fa.md#موتور-اصلی-لینوکس-و-مسیر-پشتیبان-go).
+
+For a fresh install, provide the interface and backend addresses directly:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/backpack-smart-router/main/install-online.sh | bash -s -- \
+  --kernel --public-interface eth0 --public-ip 203.0.113.10 \
+  --private-interface eth1 --private-ip 10.0.0.2 --port 8443 \
+  --backend 10.0.0.11 --backend 10.0.0.12
+```
+
+Replace the example addresses and interfaces. Use `--backend-port` if the
+backends listen on a different port. The setup uses Python 3, iproute2, nftables
+and curl. Install `conntrack` to include kernel connection counts in the dashboard.
 
 ## Management API
 
