@@ -4,7 +4,7 @@ import '@fontsource-variable/vazirmatn';
 import './style.css';
 import { APIError, request, type Audit, type Backend, type BackendStatus, type Config, type Point, type Session, type Status } from './api';
 import { clockFormat, fmt, numberFormat, percent, strategies, timestamp } from './display';
-import { RouteTopology, StatusBadge } from './Topology';
+import { RouteHealth, RouteTopology } from './Topology';
 
 const mbps = (value?: number) => value === undefined ? '—' : fmt(value * 8 / 1e6);
 const traffic = (value?: number) => value === undefined ? '—' : fmt(value / 1e9);
@@ -108,7 +108,7 @@ function Overview({ status, cfg, light, openBackend }: {
   }, [range]);
   const backends = status?.backends ?? [];
   const kernelTraffic = status?.kernelTraffic === 'included';
-  const healthy = backends.filter(backend => backend.state === 'healthy').length;
+  const healthy = backends.filter(backend => backend.state === 'healthy' && backend.kernelTLS !== false).length;
   const stats = [
     { title: status?.kernelTraffic && !status.kernelConnections ? 'اتصال‌های فعال Go' : 'اتصال‌ها و جریان‌های فعال',
       value: fmt(status?.online ? status.active : undefined), unit: '' },
@@ -199,7 +199,7 @@ function Backends({ cfg, status, csrf, save, focus }: {
       <tbody>{selected.backends.map(row => {
         const b = live.get(row.id);
         return <tr key={row.id}><td><strong>{row.name}</strong><small dir="ltr">{row.tcp || row.udp}</small></td>
-          <td><StatusBadge state={b?.state} /><small>{row.probe ? 'آزمون سرتاسری' : 'آزمون پورت'}</small></td>
+          <td><RouteHealth metrics={b} /></td>
           <td><bdi dir="ltr">{fmt(b?.tcpActive)} / {fmt(b?.udpActive)}</bdi></td><td><bdi dir="ltr">{mbps(b?.rxRate)} / {mbps(b?.txRate)} Mbps</bdi></td>
           <td><bdi dir="ltr">{fmt(b?.rtt || null)} ms</bdi></td>
           <td><div className="actions"><button onClick={() => setEdit({ previous: row.id, row: { ...row } })}>ویرایش</button>

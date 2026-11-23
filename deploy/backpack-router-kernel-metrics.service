@@ -13,7 +13,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 ProtectKernelTunables=yes
-RestrictAddressFamilies=AF_NETLINK AF_UNIX
+RestrictAddressFamilies=AF_INET AF_NETLINK AF_UNIX
 CapabilityBoundingSet=CAP_NET_ADMIN
 
 [Install]

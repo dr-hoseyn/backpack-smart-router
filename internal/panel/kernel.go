@@ -13,6 +13,7 @@ type kernelBytes struct {
 	RX     uint64 `json:"rx"`
 	TX     uint64 `json:"tx"`
 	Active *int   `json:"active,omitempty"`
+	TLS    *bool  `json:"tls,omitempty"`
 }
 
 type kernelSample struct {
@@ -73,6 +74,7 @@ func (s kernelSampler) addTraffic(status *router.Status) bool {
 		}
 		counters := s.current.Backends[backend.TCP]
 		r := perBackend[backend.TCP]
+		backend.KernelTLS = counters.TLS
 		backend.RX += counters.RX
 		backend.TX += counters.TX
 		backend.RXRate += r.rx

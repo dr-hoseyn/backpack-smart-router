@@ -40,6 +40,7 @@ type BackendStatus struct {
 	RTT         float64   `json:"rtt"`
 	LastOK      time.Time `json:"lastOK"`
 	Failure     string    `json:"failure"`
+	KernelTLS   *bool     `json:"kernelTLS,omitempty"`
 	Telemetry
 }
 

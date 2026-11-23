@@ -3,6 +3,7 @@ export type Backend = {
   weight: number; capacity: number; rateMbps: number; enabled: boolean; drain: boolean;
 };
 export type BackendStatus = Backend & {
+  kernelTLS?: boolean;
   group: string; state: string; healthScore: number; active: number; tcpActive: number; udpActive: number;
   rx: number; tx: number; rxRate: number; txRate: number; rtt: number; lastOK: string; failure: string;
   cpu: number | null; ram: number | null; loss: number | null; retransmits: number | null;

@@ -46,6 +46,12 @@ def config(path):
                 re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
                 for label in tls_name.split(".")))):
         raise ValueError("invalid TLS server name")
+    mode = cfg.setdefault("tls_health_policy", "require")
+    if mode not in ("observe", "require"):
+        raise ValueError("TLS health policy must be observe or require")
+    rate = cfg.setdefault("go_fallback_syn_rate", 0)
+    if type(rate) is not int or not 0 <= rate <= 100000:
+        raise ValueError("invalid Go fallback SYN rate")
     ports = cfg["public_ports"] + cfg["test_ports"]
     if (len(cfg["backends"]) != len(set(cfg["backends"])) or
             (cfg["test_ports"] and len(cfg["backends"]) != len(cfg["test_ports"])) or not cfg["backends"] or
@@ -83,8 +89,35 @@ def forward_rules(cfg):
     return rules
 
 
+def configure_go_admission(cfg):
+    rate = cfg["go_fallback_syn_rate"]
+    if not rate:
+        try:
+            nft("list", "chain", "ip", TABLE, "go_admission")
+        except subprocess.CalledProcessError:
+            return
+    rules = [
+        f"add chain ip {TABLE} go_admission {{ type filter hook input priority filter; policy accept; }}",
+        f"add chain ip {TABLE} go_limit",
+        f"flush chain ip {TABLE} go_admission",
+        f"flush chain ip {TABLE} go_limit",
+    ]
+    if rate:
+        wan = json.dumps(cfg["public_if"])
+        ports = "{ " + ", ".join(map(str, cfg["public_ports"])) + " }"
+        scope = f"ct status dnat ct original ip daddr {cfg['public_ip']} ct original proto-dst {ports}"
+        rules += [
+            f"add rule ip {TABLE} go_admission iifname {wan} {scope} ct state new "
+            "tcp flags syn / fin,syn,rst,ack ct mark & 0x20000000 == 0 jump go_limit",
+            f"add rule ip {TABLE} go_limit limit rate over {rate}/second burst {rate * 2} packets counter drop",
+            f"add rule ip {TABLE} go_limit ct mark set ct mark | 0x20000000 counter",
+        ]
+    apply(rules)
+
+
 def initialize(cfg):
     if TABLE in [line.split()[-1] for line in nft("list", "tables", "ip").splitlines() if line]:
+        configure_go_admission(cfg)
         return
     public, source = cfg["public_ip"], cfg["source_ip"]
     backend_port = cfg["backend_port"]
@@ -115,6 +148,7 @@ def initialize(cfg):
     rules.extend(forward_rules(cfg))
     nft("-c", "-f", "-", rules="\n".join(rules) + "\n")
     apply(rules)
+    configure_go_admission(cfg)
 
 
 def dispatch_rules(cfg, share=0, weights=None, test=False):
@@ -175,10 +209,31 @@ def active_connections(cfg):
     return active
 
 
+def tls_snapshot(cfg, context):
+    addresses = cfg["backends"]
+    with ThreadPoolExecutor(max_workers=len(addresses)) as pool:
+        def probe(address):
+            return tls_reachable(context, cfg["tls_server_name"], cfg["backend_port"], address)
+        return dict(zip(addresses, pool.map(probe, addresses)))
+
+
 def publish(cfg, path):
+    context = ssl.create_default_context() if cfg.get("tls_server_name") else None
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        publish_metrics(cfg, path, pool, context)
+
+
+def publish_metrics(cfg, path, pool, context):
     output = Path(path)
     pending = output.with_suffix(".tmp")
+    future, tls, next_probe = None, {}, 0
     while True:
+        if future is not None and future.done():
+            tls, future = future.result(), None
+        now = time.monotonic()
+        if context is not None and future is None and now >= next_probe:
+            future = pool.submit(tls_snapshot, cfg, context)
+            next_probe = now + 12
         try:
             active = active_connections(cfg)
         except (OSError, subprocess.SubprocessError) as error:
@@ -187,6 +242,7 @@ def publish(cfg, path):
         snapshot = {
             "group": cfg.get("control_group", ""),
             "backends": {f"{ip}:{cfg['backend_port']}": {"rx": rx, "tx": tx,
+                          **({"tls": tls[ip]} if ip in tls else {}),
                           **({"active": active[ip]} if ip in active else {})}
                          for ip, (rx, tx) in traffic_counters(cfg).items()},
         }
@@ -288,7 +344,7 @@ def run(cfg, share_file):
     updated = time.monotonic()
     applied = None
     fallback = dispatch_rules(cfg)
-    tls = ssl.create_default_context() if cfg.get("tls_server_name") else None
+    tls = ssl.create_default_context() if cfg.get("tls_server_name") and cfg["tls_health_policy"] == "require" else None
     missed = {}
     while True:
         try:

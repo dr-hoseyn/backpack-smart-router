@@ -64,7 +64,7 @@ jobs:
           sudo ip link set bp-install-lan up
           if ! sudo bash install.sh --kernel --public-interface bp-install-wan --public-ip 203.0.113.10 \
               --private-interface bp-install-lan --private-ip 10.0.0.2 --port 8443 --backend 10.0.0.11 \
-              --syn-rate 480 --syn-rate-per-ip 12 >"$smoke/install.log"; then
+              --syn-rate 480 --syn-rate-per-ip 12 --go-fallback-syn-rate 120 >"$smoke/install.log"; then
             sudo journalctl -u backpack-router-engine -u backpack-router-panel -u backpack-router-kernel-forward --lines 50 --no-pager
             exit 1
           fi
@@ -75,6 +75,7 @@ jobs:
           systemctl is-active --quiet backpack-router-kernel-metrics.service
           systemctl is-active --quiet backpack-router-native-tcp-ingress.service
           systemctl is-active --quiet backpack-router-tcp-admission.service
+          sudo nft list chain ip backpack_router_kernel go_limit | grep -F 'limit rate over 120/second'
           curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:9080/
           sudo curl --fail --unix-socket /run/backpack-router/control.sock http://router/status
           pid=$(systemctl show backpack-router-engine -p MainPID --value)

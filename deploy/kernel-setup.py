@@ -32,7 +32,9 @@ def main():
     parser.add_argument("--private-ip", required=True, type=ipaddress.IPv4Address)
     parser.add_argument("--port", required=True, type=port)
     parser.add_argument("--backend-port", type=port)
-    parser.add_argument("--tls-server-name", help="require a valid TLS handshake for this hostname before routing")
+    parser.add_argument("--tls-server-name", help="hostname to verify in backend TLS checks")
+    parser.add_argument("--tls-health-policy", choices=("observe", "require"), default="require")
+    parser.add_argument("--go-fallback-syn-rate", type=admission_rate)
     parser.add_argument("--syn-rate", type=admission_rate)
     parser.add_argument("--syn-rate-per-ip", type=admission_rate)
     parser.add_argument("--backend", required=True, action="append", type=ipaddress.IPv4Address)
@@ -80,6 +82,9 @@ def main():
     }
     if args.tls_server_name:
         kernel["tls_server_name"] = args.tls_server_name
+        kernel["tls_health_policy"] = args.tls_health_policy
+    if args.go_fallback_syn_rate:
+        kernel["go_fallback_syn_rate"] = args.go_fallback_syn_rate
     template = (defaults / "native-tcp-ingress.nft.example").read_text(encoding="utf-8")
     values = {"eth0": interfaces[0], "203.0.113.10": public, "10.0.0.2": private, "8443": str(args.port)}
     rules = re.sub("|".join(map(re.escape, values)), lambda match: values[match[0]], template)

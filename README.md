@@ -76,6 +76,10 @@ backends listen on a different port. The setup uses Python 3, iproute2, nftables
 and curl. Install `conntrack` to include kernel connection counts in the dashboard.
 For TLS forwarding, add `--tls-server-name tunnel.example.net` to require a
 verified TLS handshake before nftables sends new connections to a backend.
+Add `--tls-health-policy observe` to show TLS results in the dashboard while
+keeping TCP health checks in charge of routing. Set `--go-fallback-syn-rate`
+to limit new connections per second to the Go fallback. This limit does not
+apply to kernel-forwarded flows and reserves conntrack mark bit `0x20000000`.
 For an ingress that needs SYN admission limits, set both `--syn-rate` and
 `--syn-rate-per-ip` in connections per second. Keep the per-IP rate at or below
 the total. The generated rules reserve conntrack mark bit `0x10000000`.

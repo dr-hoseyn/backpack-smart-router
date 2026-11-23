@@ -22,8 +22,10 @@ function rate(b?: BackendStatus) {
   return b ? b.rxRate + b.txRate : undefined;
 }
 
-function RouteHealth({ metrics }: { metrics?: BackendStatus }) {
+export function RouteHealth({ metrics }: { metrics?: BackendStatus }) {
   if (metrics?.state === 'healthy') {
+    if (metrics.kernelTLS === false) return <span className="badge checking">TLS ناموفق</span>;
+    if (metrics.kernelTLS === true) return <span className="badge healthy">بررسی TLS موفق</span>;
     return <span className="badge healthy">{metrics.verified ? 'آزمون سرتاسری موفق' : 'بررسی TCP موفق'}</span>;
   }
   return <StatusBadge state={metrics?.state} />;
@@ -32,7 +34,7 @@ function RouteHealth({ metrics }: { metrics?: BackendStatus }) {
 function branchFor(route: Route, total: number): Branch {
   const state = route.metrics?.state;
   const speed = rate(route.metrics);
-  const signal: Signal = state === 'healthy' ? (speed ? 'flow' : 'idle')
+  const signal: Signal = state === 'healthy' ? (speed ? 'flow' : route.metrics?.kernelTLS === false ? 'warming' : 'idle')
     : state === 'unhealthy' ? 'down'
     : state === 'checking' || state === 'draining' ? 'warming' : 'quiet';
   return { id: route.backend.id, signal, share: speed !== undefined && total > 0 ? speed / total : undefined };
