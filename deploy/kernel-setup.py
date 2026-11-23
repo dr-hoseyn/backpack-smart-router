@@ -16,6 +16,13 @@ def port(value):
     return number
 
 
+def admission_rate(value):
+    number = int(value)
+    if not 1 <= number <= 100000:
+        raise argparse.ArgumentTypeError("SYN rate must be between 1 and 100000 per second")
+    return number
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("output", type=Path)
@@ -25,8 +32,14 @@ def main():
     parser.add_argument("--private-ip", required=True, type=ipaddress.IPv4Address)
     parser.add_argument("--port", required=True, type=port)
     parser.add_argument("--backend-port", type=port)
+    parser.add_argument("--tls-server-name", help="require a valid TLS handshake for this hostname before routing")
+    parser.add_argument("--syn-rate", type=admission_rate)
+    parser.add_argument("--syn-rate-per-ip", type=admission_rate)
     parser.add_argument("--backend", required=True, action="append", type=ipaddress.IPv4Address)
     args = parser.parse_args()
+    if (args.syn_rate is None) != (args.syn_rate_per_ip is None) or (
+            args.syn_rate is not None and args.syn_rate_per_ip > args.syn_rate):
+        parser.error("set both SYN rates and keep the per-IP rate at or below the total")
 
     interfaces = (args.public_interface, args.private_interface)
     if interfaces[0] == interfaces[1] or any(
@@ -65,12 +78,24 @@ def main():
         "public_ports": [args.port], "backend_port": backend_port, "backends": destinations,
         "control_group": group, "health_socket": "/run/backpack-router/control.sock",
     }
+    if args.tls_server_name:
+        kernel["tls_server_name"] = args.tls_server_name
     template = (defaults / "native-tcp-ingress.nft.example").read_text(encoding="utf-8")
     values = {"eth0": interfaces[0], "203.0.113.10": public, "10.0.0.2": private, "8443": str(args.port)}
     rules = re.sub("|".join(map(re.escape, values)), lambda match: values[match[0]], template)
     for name, config in (("engine.json", engine), ("kernel-forward.json", kernel)):
         (args.output / name).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
     (args.output / "native-tcp-ingress.nft").write_text(rules, encoding="utf-8")
+    if args.syn_rate is not None:
+        template = (defaults / "tcp-admission.nft.example").read_text(encoding="utf-8")
+        values.update({
+            "12/second": f"{args.syn_rate_per_ip}/second",
+            "burst 30": f"burst {(5 * args.syn_rate_per_ip + 1) // 2}",
+            "480/second": f"{args.syn_rate}/second",
+            "burst 600": f"burst {(5 * args.syn_rate + 3) // 4}",
+        })
+        admission = re.sub("|".join(map(re.escape, values)), lambda match: values[match[0]], template)
+        (args.output / "tcp-admission.nft").write_text(admission, encoding="utf-8")
 
 
 if __name__ == "__main__":

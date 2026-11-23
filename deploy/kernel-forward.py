@@ -2,11 +2,14 @@
 """Linux TCP forwarding for a single public IPv4 address and backend pool."""
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import ipaddress
 import json
 import logging
 import re
 import shutil
+import socket
+import ssl
 import subprocess
 import time
 from pathlib import Path
@@ -37,6 +40,12 @@ def config(path):
     cfg["backends"] = [str(ipaddress.IPv4Address(ip)) for ip in cfg["backends"]]
     cfg.setdefault("backend_port", 443)
     cfg.setdefault("test_ports", [])
+    tls_name = cfg.get("tls_server_name", "")
+    if not isinstance(tls_name, str) or (tls_name and (
+            len(tls_name) > 253 or not all(
+                re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                for label in tls_name.split(".")))):
+        raise ValueError("invalid TLS server name")
     ports = cfg["public_ports"] + cfg["test_ports"]
     if (len(cfg["backends"]) != len(set(cfg["backends"])) or
             (cfg["test_ports"] and len(cfg["backends"]) != len(cfg["test_ports"])) or not cfg["backends"] or
@@ -195,12 +204,28 @@ def proxy_status(cfg):
     return json.loads(result.stdout)
 
 
-def healthy_backends(cfg):
+def tls_reachable(context, server_name, port, address):
+    try:
+        with socket.create_connection((address, port), timeout=2) as raw:
+            with context.wrap_socket(raw, server_hostname=server_name):
+                return True
+    except OSError as error:
+        logging.debug("TLS probe failed for %s:%s: %s", address, port, error)
+        return False
+
+
+def healthy_backends(cfg, tls=None):
     addresses = {f"{ip}:{cfg['backend_port']}": ip for ip in cfg["backends"]}
-    return {addresses[backend["tcp"]]: backend for backend in proxy_status(cfg)["backends"]
-            if backend["tcp"] in addresses and backend["state"] == "healthy"
-            and (not cfg.get("control_group") or backend["group"] == cfg["control_group"])
-            and backend["enabled"] and not backend["drain"]}
+    eligible = {addresses[backend["tcp"]]: backend for backend in proxy_status(cfg)["backends"]
+                if backend["tcp"] in addresses and backend["state"] == "healthy"
+                and (not cfg.get("control_group") or backend["group"] == cfg["control_group"])
+                and backend["enabled"] and not backend["drain"]}
+    if not tls or not eligible:
+        return eligible
+    with ThreadPoolExecutor(max_workers=len(eligible)) as pool:
+        def probe(address):
+            return tls_reachable(tls, cfg["tls_server_name"], cfg["backend_port"], address)
+        return {address: eligible[address] for address, healthy in zip(eligible, pool.map(probe, eligible)) if healthy}
 
 
 def measure(cfg, seconds):
@@ -252,6 +277,7 @@ def run(cfg, share_file):
     updated = time.monotonic()
     applied = None
     fallback = dispatch_rules(cfg)
+    tls = ssl.create_default_context() if cfg.get("tls_server_name") else None
     while True:
         try:
             try:
@@ -260,7 +286,7 @@ def run(cfg, share_file):
                 share = SLOTS
             if not 0 <= share <= SLOTS:
                 raise ValueError("traffic share must be between 0 and 1000")
-            health = healthy_backends(cfg)
+            health = healthy_backends(cfg, tls)
             current = counters(cfg)
             now = time.monotonic()
             for ip, count in current.items():

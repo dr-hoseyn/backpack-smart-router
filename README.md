@@ -74,6 +74,11 @@ curl -fsSL https://raw.githubusercontent.com/dr-hoseyn/backpack-smart-router/mai
 Replace the example addresses and interfaces. Use `--backend-port` if the
 backends listen on a different port. The setup uses Python 3, iproute2, nftables
 and curl. Install `conntrack` to include kernel connection counts in the dashboard.
+For TLS forwarding, add `--tls-server-name tunnel.example.net` to require a
+verified TLS handshake before nftables sends new connections to a backend.
+For an ingress that needs SYN admission limits, set both `--syn-rate` and
+`--syn-rate-per-ip` in connections per second. Keep the per-IP rate at or below
+the total. The generated rules reserve conntrack mark bit `0x10000000`.
 
 ## Management API
 

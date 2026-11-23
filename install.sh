@@ -37,7 +37,7 @@ fi
 
 if [[ $mode == --kernel ]]; then
   if [[ -e $state/config/engine.json || -e $state/panel/router.sqlite ||
-        -e $etc/kernel-forward.json || -e $etc/native-tcp-ingress.nft ]]; then
+        -e $etc/kernel-forward.json || -e $etc/native-tcp-ingress.nft || -e $etc/tcp-admission.nft ]]; then
     printf '%s\n' 'Kernel setup arguments are for a fresh install. Run without arguments to upgrade an existing router.' >&2
     exit 1
   fi
@@ -47,8 +47,12 @@ if [[ $mode == --kernel ]]; then
   kernel_setup=$(mktemp -d)
   trap 'rm -rf -- "$kernel_setup"' EXIT
   python3 "$base/deploy/kernel-setup.py" "$kernel_setup" "$@"
+  python3 "$base/deploy/kernel-forward.py" "$kernel_setup/kernel-forward.json" check
   "$base/backpack-router" check -config "$kernel_setup/engine.json"
   nft -c -f "$kernel_setup/native-tcp-ingress.nft"
+  if [[ -f $kernel_setup/tcp-admission.nft ]]; then
+    nft -c -f "$kernel_setup/tcp-admission.nft"
+  fi
 fi
 
 install -d -m 0755 "$root/releases" "$etc"
@@ -87,6 +91,9 @@ else
     install -m 0640 -o backpack-panel -g backpack-router "$kernel_setup/engine.json" "$state/config/engine.json"
     install -m 0600 "$kernel_setup/kernel-forward.json" "$etc/kernel-forward.json"
     install -m 0644 "$kernel_setup/native-tcp-ingress.nft" "$etc/native-tcp-ingress.nft"
+    if [[ -f $kernel_setup/tcp-admission.nft ]]; then
+      install -m 0644 "$kernel_setup/tcp-admission.nft" "$etc/tcp-admission.nft"
+    fi
   elif [[ ! -f $state/config/engine.json ]]; then
     install -m 0640 -o backpack-panel -g backpack-router "$base/deploy/engine.example.json" "$state/config/engine.json"
   fi
@@ -124,6 +131,10 @@ else
     install -m 0644 "$base/deploy/backpack-router-kernel-forward.service" "$base/deploy/backpack-router-kernel-metrics.service" "$units/"
     printf 'BACKPACK_ROUTER_KERNEL_METRICS=/run/backpack-router-kernel/traffic.json\n' > "$etc/kernel-metrics.env"
     services+=(backpack-router-kernel-forward.service backpack-router-kernel-metrics.service)
+    if [[ -f $etc/tcp-admission.nft ]]; then
+      install -m 0644 "$base/deploy/backpack-router-tcp-admission.service" "$units/"
+      services+=(backpack-router-tcp-admission.service)
+    fi
     if [[ -f $etc/native-tcp-ingress.nft ]]; then
       if [[ ! -e $units/backpack-router-native-tcp-ingress.service ]]; then
         install -m 0644 "$base/deploy/backpack-router-native-tcp-ingress.service.example" "$units/backpack-router-native-tcp-ingress.service"
