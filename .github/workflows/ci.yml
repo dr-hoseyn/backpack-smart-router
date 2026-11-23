@@ -56,6 +56,31 @@ jobs:
           test "$pid" = "$(systemctl show backpack-router-engine -p MainPID --value)"
           sudo bash deploy/uninstall.sh
           rm -rf -- "$smoke"
+      - name: Verify the public TCP relay forwards to the same port on a different address
+        run: |
+          smoke=$(mktemp -d)
+          archive=(bin/*-amd64.tar.gz)
+          tar -xzf "${archive[0]}" -C "$smoke"
+          package=("$smoke"/backpack-smart-router-*)
+          units=/etc/systemd/system
+          relay=backpack-router-tcp-relay
+          cleanup() {
+            sudo systemctl stop "$relay.socket" "$relay.service" || true
+            sudo rm -f "$units/$relay.socket" "$units/$relay.service"
+            sudo systemctl daemon-reload
+            kill "$backend"
+            rm -rf -- "$smoke"
+          }
+          printf 'BackPack TCP relay\n' > "$smoke/check.txt"
+          python3 -m http.server 8443 --bind 127.0.0.1 --directory "$smoke" &
+          backend=$!
+          trap cleanup EXIT
+          sed 's/203\.0\.113\.10/127.0.0.2/' "${package[0]}/deploy/$relay.socket.example" | sudo tee "$units/$relay.socket" >/dev/null
+          sed 's/10\.0\.0\.11/127.0.0.1/' "${package[0]}/deploy/$relay.service.example" | sudo tee "$units/$relay.service" >/dev/null
+          curl --fail --retry 5 --retry-connrefused --retry-delay 1 http://127.0.0.1:8443/check.txt
+          sudo systemctl daemon-reload
+          sudo systemctl start "$relay.socket"
+          curl --fail --noproxy '*' http://127.0.0.2:8443/check.txt | cmp - "$smoke/check.txt"
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: linux-packages

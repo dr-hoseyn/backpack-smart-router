@@ -102,6 +102,22 @@ sudo systemctl enable --now backpack-router-agent
 
 آدرس خصوصی عامل همان VM را در پنل وارد کنید و «آزمون» را بزنید. برای تأیید، در پایلوت مسیر آلمان را با باز ماندن پورت ورودی قطع کنید. وضعیت باید بعد از آستانهٔ خرابی تغییر کند. زمان گزارش‌شده برای مسیر دارای عامل شامل برقراری اتصال، TLS و پاسخ HTTP است. بدون عامل، پنل نتیجهٔ آزمون پورت TCP را نشان می‌دهد و برای ورودی UDP-only عامل الزامی است. شاخص‌های CPU، RAM و ارسال مجدد TCP در محدودهٔ VM محاسبه می‌شوند. نرخ ترافیک به بایت‌های عبوری از روتر مربوط است. افت بسته فقط در صورت وجود گزارش اندازه‌گیری نمایش داده می‌شود.
 
+## هدایت یک پورت عمومی TCP به مقصد خصوصی
+
+اگر پروفایل VLESS روی پورت عمومی `8443` تنظیم شده و موتور روی پورت دیگری گوش می‌دهد، می‌توانید یک سوکت جدا برای `8443` فعال کنید. این سوکت TCP را به یک مقصد خصوصی می‌فرستد و TLS روی همان مقصد برقرار می‌شود. ابتدا از روتر بررسی کنید که IP و پورت خصوصی پاسخ می‌دهند و مقصد برای SNI پروفایل گواهی معتبر ارائه می‌کند.
+
+در [نمونهٔ سوکت](deploy/backpack-router-tcp-relay.socket.example)، نشانی `ListenStream` را با IP عمومی روتر و پورت پروفایل جایگزین کنید. در [نمونهٔ سرویس](deploy/backpack-router-tcp-relay.service.example)، آدرس انتهای `ExecStart` را روی IP و پورت خصوصی مقصد بگذارید. پورت عمومی باید آزاد باشد. فایل‌های ویرایش‌شده را از داخل بستهٔ انتشار نصب کنید.
+
+```sh
+sudo install -m 0644 deploy/backpack-router-tcp-relay.socket.example /etc/systemd/system/backpack-router-tcp-relay.socket
+sudo install -m 0644 deploy/backpack-router-tcp-relay.service.example /etc/systemd/system/backpack-router-tcp-relay.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now backpack-router-tcp-relay.socket
+systemctl show --property=Listen --value backpack-router-tcp-relay.socket
+```
+
+اتصال را با همان پروفایل از بیرون روتر آزمایش کنید. این مسیر یک مقصد ثابت دارد و ترافیک آن از موتور Go عبور نمی‌کند. برای توزیع ترافیک یک پورت بین چند مقصد، پورت را در تنظیمات موتور از روش بخش بعدی تعریف کنید.
+
 ## تغییر پورت یا گروه
 
 تغییر ورودی شنونده به راه‌اندازی مجدد موتور نیاز دارد. یک نسخهٔ پیکربندی اصلاح‌شده در مسیر قابل خواندن برای `backpack-panel` قرار دهید و در پنجرهٔ نگهداری اجرا کنید.

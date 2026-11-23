@@ -1,0 +1,11 @@
+[Unit]
+Description=BackPack Smart Router TCP relay to a private backend
+
+[Service]
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 10.0.0.11:8443
+DynamicUser=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_INET AF_UNIX

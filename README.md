@@ -47,6 +47,9 @@ Backends see the router as the network-layer source.
 For deployments with a separate public ingress, set `VITE_PUBLIC_INGRESS` when
 building the UI to display its public address and port on the topology map.
 
+To forward an additional public TCP port to a single private backend while the
+engine stays online, use the [TCP relay setup](README.fa.md#هدایت-یک-پورت-عمومی-tcp-به-مقصد-خصوصی).
+
 ## Optional Linux kernel forwarding
 
 The standard installer starts the Go proxy. A dedicated IPv4 router with a

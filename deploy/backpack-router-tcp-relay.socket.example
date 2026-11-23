@@ -1,0 +1,10 @@
+[Unit]
+Description=BackPack Smart Router public TCP relay
+Wants=network-online.target
+After=network-online.target
+
+[Socket]
+ListenStream=203.0.113.10:8443
+
+[Install]
+WantedBy=sockets.target
