@@ -107,16 +107,28 @@ function Overview({ status, cfg, light, openBackend }: {
     return () => { current = false; clearInterval(timer); };
   }, [range]);
   const backends = status?.backends ?? [];
+  const kernelTraffic = status?.kernelTraffic === 'included';
+  const healthy = backends.filter(backend => backend.state === 'healthy').length;
   const stats = [
-    { title: 'ورودی سالم', value: status?.online ? fmt(backends.filter(b => b.state === 'healthy').length) + ' / ' + fmt(backends.length) : '—', unit: 'مسیر' },
-    { title: status?.kernelTraffic ? 'جریان فعال در Go' : 'اتصال و جریان فعال', value: fmt(status?.online ? status.active : undefined), unit: 'جریان' },
-    { title: 'دریافت / ارسال', value: status?.online ? mbps(status.rxRate) + ' / ' + mbps(status.txRate) : '—', unit: 'Mbps' },
+    { title: status?.kernelTraffic && !status.kernelConnections ? 'اتصال‌های فعال Go' : 'اتصال‌ها و جریان‌های فعال',
+      value: fmt(status?.online ? status.active : undefined), unit: '' },
+    { title: 'مقصدهای سالم', value: status?.online ? fmt(healthy) + ' / ' + fmt(backends.length) : '—', unit: 'مسیر' },
     { title: 'ترافیک عبوری', value: traffic(status?.online ? status.rx + status.tx : undefined), unit: 'GB' },
   ];
   return <>
     {status?.kernelTraffic === 'unavailable' && <p className="notice" role="status">آمار مسیر کرنل فعلاً در دسترس نیست. اعداد ترافیک فقط مسیر Go را نشان می‌دهند.</p>}
-    <section className="stats">{stats.map(stat => <article className="card stat" key={stat.title}><h2>{stat.title}</h2>
-      <div><strong dir="ltr">{stat.value}</strong> <small>{stat.unit}</small></div></article>)}</section>
+    <section className="stats" aria-label="شاخص‌های ترافیک">
+      <article className="card stat stat-traffic">
+        <div className="stat-heading"><h2>ترافیک لحظه‌ای</h2><small dir="ltr">Mbps</small></div>
+        <dl className="stat-rates">
+          <div><dt>دریافت</dt><dd><strong dir="ltr">{status?.online ? mbps(status.rxRate) : '—'}</strong></dd></div>
+          <div><dt>ارسال</dt><dd><strong dir="ltr">{status?.online ? mbps(status.txRate) : '—'}</strong></dd></div>
+        </dl>
+      </article>
+      {stats.map(stat => <article className="card stat" key={stat.title}><h2>{stat.title}</h2>
+        <div><strong dir="ltr">{stat.value}</strong>{stat.unit && <> <small>{stat.unit}</small></>}</div>
+      </article>)}
+    </section>
     <RouteTopology status={status} config={cfg} light={light} openBackend={openBackend} />
     <section className="card chart-card"><div className="section-title"><div><h2>ترافیک تجمیعی</h2>
       <div className="legend"><span className="rx">دریافت</span><span className="tx">ارسال</span><span>مگابیت بر ثانیه</span></div></div>
@@ -125,7 +137,7 @@ function Overview({ status, cfg, light, openBackend }: {
       </select></div>
       {error ? <p role="alert">{error}</p> : <Chart points={points} label="نمودار نرخ دریافت و ارسال" light={light} />}
     </section>
-    {status?.decision && <section className="card decision"><h2>آخرین انتخاب مسیر</h2>
+    {status?.decision && <section className="card decision"><h2>{kernelTraffic ? 'آخرین انتخاب مسیر پشتیبان Go' : 'آخرین انتخاب مسیر'}</h2>
       <p>{backends.find(b => b.id === status.decision?.backend)?.name ?? status.decision.backend} · {strategies[status.decision.strategy]} · امتیاز <bdi dir="ltr">{fmt(status.decision.score)}</bdi>
         {status.decision.retry && ' · انتخاب دوباره پس از خطای اتصال'}</p></section>}
   </>;

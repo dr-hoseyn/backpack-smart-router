@@ -38,24 +38,45 @@ jobs:
           bash deploy/package.sh "$version" amd64
           bash deploy/package.sh "$version" arm64
           (cd bin && sha256sum ./*.tar.gz > SHA256SUMS)
-      - name: Install and restart on Ubuntu
+      - name: Install the kernel router and restart the dashboard on Ubuntu
         shell: bash
         run: |
           smoke=$(mktemp -d)
           tar -xzf bin/*-amd64.tar.gz -C "$smoke"
           cd "$smoke"/backpack-smart-router-*
-          if ! sudo bash install.sh >"$smoke/install.log"; then
-            sudo journalctl -u backpack-router-engine -u backpack-router-panel --lines 50 --no-pager
+          previous_forwarding=$(sysctl -n net.ipv4.ip_forward)
+          cleanup() {
+            sudo bash deploy/uninstall.sh || true
+            sudo nft delete table ip backpack_router_kernel || true
+            sudo sysctl -w "net.ipv4.ip_forward=$previous_forwarding" >/dev/null
+            sudo ip link del bp-install-wan || true
+            sudo ip link del bp-install-lan || true
+            rm -rf -- "$smoke"
+          }
+          trap cleanup EXIT
+          sudo ip link add bp-install-wan type dummy
+          sudo ip link add bp-install-lan type dummy
+          sudo ip addr add 203.0.113.10/32 dev bp-install-wan
+          sudo ip addr add 10.0.0.2/24 dev bp-install-lan
+          sudo ip link set bp-install-wan up
+          sudo ip link set bp-install-lan up
+          if ! sudo bash install.sh --kernel --public-interface bp-install-wan --public-ip 203.0.113.10 \
+              --private-interface bp-install-lan --private-ip 10.0.0.2 --port 8443 --backend 10.0.0.11 >"$smoke/install.log"; then
+            sudo journalctl -u backpack-router-engine -u backpack-router-panel -u backpack-router-kernel-forward --lines 50 --no-pager
             exit 1
           fi
+          grep -Fxq 'Default web panel: http://127.0.0.1:9080/' "$smoke/install.log"
+          grep -Fxq 'Initial login: admin' "$smoke/install.log"
+          grep -Eq '^Initial password: [[:xdigit:]]{40}$' "$smoke/install.log"
+          systemctl is-active --quiet backpack-router-kernel-forward.service
+          systemctl is-active --quiet backpack-router-kernel-metrics.service
+          systemctl is-active --quiet backpack-router-native-tcp-ingress.service
           curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:9080/
           sudo curl --fail --unix-socket /run/backpack-router/control.sock http://router/status
           pid=$(systemctl show backpack-router-engine -p MainPID --value)
           sudo systemctl restart backpack-router-panel
           curl --fail --retry 15 --retry-connrefused --retry-delay 1 http://127.0.0.1:9080/
           test "$pid" = "$(systemctl show backpack-router-engine -p MainPID --value)"
-          sudo bash deploy/uninstall.sh
-          rm -rf -- "$smoke"
       - name: Verify the public TCP relay forwards to the same port on a different address
         run: |
           smoke=$(mktemp -d)
