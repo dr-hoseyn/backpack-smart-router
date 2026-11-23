@@ -206,7 +206,7 @@ def proxy_status(cfg):
 
 def tls_reachable(context, server_name, port, address):
     try:
-        with socket.create_connection((address, port), timeout=2) as raw:
+        with socket.create_connection((address, port), timeout=4) as raw:
             with context.wrap_socket(raw, server_hostname=server_name):
                 return True
     except OSError as error:
@@ -214,18 +214,29 @@ def tls_reachable(context, server_name, port, address):
         return False
 
 
-def healthy_backends(cfg, tls=None):
+def healthy_backends(cfg, tls=None, missed=None):
     addresses = {f"{ip}:{cfg['backend_port']}": ip for ip in cfg["backends"]}
     eligible = {addresses[backend["tcp"]]: backend for backend in proxy_status(cfg)["backends"]
                 if backend["tcp"] in addresses and backend["state"] == "healthy"
                 and (not cfg.get("control_group") or backend["group"] == cfg["control_group"])
                 and backend["enabled"] and not backend["drain"]}
-    if not tls or not eligible:
+    if not tls:
+        return eligible
+    if missed is None:
+        missed = {}
+    for address in missed.keys() - eligible.keys():
+        del missed[address]
+    if not eligible:
         return eligible
     with ThreadPoolExecutor(max_workers=len(eligible)) as pool:
         def probe(address):
             return tls_reachable(tls, cfg["tls_server_name"], cfg["backend_port"], address)
-        return {address: eligible[address] for address, healthy in zip(eligible, pool.map(probe, eligible)) if healthy}
+        for address, healthy in zip(eligible, pool.map(probe, eligible)):
+            if healthy:
+                missed[address] = 0
+            elif address in missed:
+                missed[address] += 1
+    return {address: backend for address, backend in eligible.items() if missed.get(address, 2) < 2}
 
 
 def measure(cfg, seconds):
@@ -278,6 +289,7 @@ def run(cfg, share_file):
     applied = None
     fallback = dispatch_rules(cfg)
     tls = ssl.create_default_context() if cfg.get("tls_server_name") else None
+    missed = {}
     while True:
         try:
             try:
@@ -286,7 +298,7 @@ def run(cfg, share_file):
                 share = SLOTS
             if not 0 <= share <= SLOTS:
                 raise ValueError("traffic share must be between 0 and 1000")
-            health = healthy_backends(cfg, tls)
+            health = healthy_backends(cfg, tls, missed)
             current = counters(cfg)
             now = time.monotonic()
             for ip, count in current.items():

@@ -19,12 +19,17 @@ class KernelHealthTest(unittest.TestCase):
             for address in config["backends"]
         ]
         probes = []
+        tls_available = {"10.0.0.12"}
 
         def probe(_, hostname, port, address):
             probes.append((hostname, port, address))
-            return address == "10.0.0.12"
+            return address in tls_available
 
         with patch.dict(eligible.__globals__, proxy_status=lambda _: {"backends": reports}, tls_reachable=probe):
-            self.assertEqual(list(eligible(config, object())), ["10.0.0.12"])
+            missed = {}
+            self.assertEqual(list(eligible(config, object(), missed)), ["10.0.0.12"])
             self.assertEqual(list(eligible(config)), config["backends"])
-        self.assertCountEqual(probes, [(config["tls_server_name"], 8443, ip) for ip in config["backends"]])
+            tls_available.clear()
+            self.assertEqual(list(eligible(config, object(), missed)), ["10.0.0.12"])
+            self.assertEqual(list(eligible(config, object(), missed)), [])
+        self.assertCountEqual(probes, [(config["tls_server_name"], 8443, ip) for ip in config["backends"]] * 3)
